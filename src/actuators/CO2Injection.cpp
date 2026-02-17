@@ -13,8 +13,6 @@ CO2Injection::CO2Injection(int pinNr) : GPIOPin(pinNr)
 }
 
 void CO2Injection::set(uint16_t value) {
-    if (value == 1) printf("Opening valve\n");
-    else printf("closing valve\n");
     gpio_put(GPIOPin, value);
 }
 

@@ -11,34 +11,46 @@
 #include "ActuatorsInterface.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
+#include "timers.h"
+#include "Fmutex.h"
 #include "ControllerEnums.h"
 
 
 class CO2Controller {
 public:
-    CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 3> &sensors, const std::array<std::shared_ptr<ActuatorsInterface>, 2> &actuators);
+    CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 3> &sensors, const std::array<std::shared_ptr<ActuatorsInterface>, 2> &actuators,
+        const std::shared_ptr<Fmutex> guard, QueueHandle_t controlQueue, QueueHandle_t displayQueue, QueueHandle_t cloudQueue, int co2Level = 1200, TickType_t measureInterval = 3000);
 
 private:
     static void runner(void *params);
     void run();
+    static void valveTimerCallback(TimerHandle_t xTimer);
 
     std::array<std::shared_ptr<SensorInterface>, 3> sensors;
     std::array<std::shared_ptr<ActuatorsInterface>, 2> actuators;
     TaskHandle_t handle;
+    QueueHandle_t controllerQueue;
+    QueueHandle_t displayQueue;
+    QueueHandle_t cloudQueue;
+    TimerHandle_t valveTimer;
 
-    int upperLimit;
-    int lowerLimit;
+    std::shared_ptr<Fmutex> guard;
 
-    float co2;
-    float temp;
-    float rh;
-    bool fanOn;
+    int co2Level; // this can be changed through UI or remotely
+    TickType_t measuringInterval;
 
+    TickType_t lastValveOpenTime{};
+    bool valveCanOpen{};
+
+    float co2{};
+    float temp{};
+    float rh{};
+
+    bool sensorStartUp();
     void readSensors();
-    void checkFan();
-    void checkThresholds();
-    void controlValve(size_t time);
-    void checkMotor();
+    void controlFan();
+    void controlValve();
 
 };
 

@@ -5,79 +5,141 @@
 #include "CO2Controller.h"
 #include <vector>
 #include <sys/stat.h>
+#include <mutex>
 
-CO2Controller::CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 3> &sensors, const std::array<std::shared_ptr<ActuatorsInterface>, 2> &actuators) :
-    sensors(sensors), actuators(actuators)
+#include "queue.h"
+
+#define VALVE_WAIT_TIME 60000
+#define FAN_ON_MAX 1000
+#define START_UP_MAX_TIME 180000
+#define VALVE_OPEN_MAX_TIME 2000
+#define VALVE_OPEN_TIME 1500
+
+CO2Controller::CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 3> &sensors, const std::array<std::shared_ptr<ActuatorsInterface>, 2> &actuators, const std::shared_ptr<Fmutex> guard, QueueHandle_t controlQueue, QueueHandle_t displayQueue, QueueHandle_t cloudQueue, int co2Level, TickType_t measureInterval) :
+    sensors(sensors), actuators(actuators), guard(guard), controllerQueue(controlQueue), displayQueue(displayQueue), cloudQueue(cloudQueue), co2Level(co2Level), measuringInterval(measureInterval)
 {
-    xTaskCreate(CO2Controller::runner, "CONTROLLER", 1024, this, tskIDLE_PRIORITY + 1, &handle);
+    valveTimer = xTimerCreate("VALVE_TIMER", 1000, pdFALSE, this, valveTimerCallback);
+    xTaskCreate(CO2Controller::runner, "CONTROLLER", 4096, this, tskIDLE_PRIORITY + 1, &handle);
 }
+
+// timer to control co2 valve -> we can open valve max 2s
+void CO2Controller::valveTimerCallback(TimerHandle_t xTimer) {
+    auto instance = static_cast<CO2Controller*>(pvTimerGetTimerID(xTimer));
+    instance->actuators[CO2_VALVE]->set(0);
+    printf("valve closed\n");
+}
+
 
 void CO2Controller::runner(void *params) {
     auto instance = static_cast<CO2Controller *>(params);
     instance->run();
 }
 
+// controller main task
 void CO2Controller::run() {
+
+    valveCanOpen = true;
+
+    bool sensorsOK = sensorStartUp(); // warm up co2 sensor until we get accurate results
+    if (!sensorsOK) printf("FAILED TO INITIALIZE SENSORS\n");
+
+    TickType_t lastWakeTime = xTaskGetTickCount();
+
     while (true) {
+
+        // see if there is values inside the queue and set new co2Level accordingly
+        //if (xQueueReceive(controllerQueue, &temp, 0) == pdPASS) // other option would be to use this as our delay -> but than interval is not so accurate?
+
         readSensors();
-        checkThresholds();
-        checkMotor();
-        vTaskDelay(3000);
+        controlFan();
+        controlValve();
+
+        vTaskDelayUntil(&lastWakeTime, measuringInterval); // polling interval 3 sec (default)
     }
 }
+
+void CO2Controller::controlValve() {
+    bool openValve = false;
+    TickType_t valveOpenPeriod = 0;
+
+    if (valveCanOpen) {
+        if (co2 <= co2Level * 0.9) {
+            valveOpenPeriod = VALVE_OPEN_MAX_TIME; // open valve for two secs
+            openValve = true;
+        }
+        else if (co2 <= co2Level * 0.95) {
+            valveOpenPeriod = VALVE_OPEN_TIME; // open valve for 1.5 secs
+            openValve = true;
+        }
+
+        if (openValve) {
+            std::lock_guard<Fmutex> lock(*guard); // lock modbus write
+            lastValveOpenTime = xTaskGetTickCount();
+            actuators[CO2_VALVE]->set(1); // open valve
+            xTimerChangePeriod(valveTimer, valveOpenPeriod, 0);
+            xTimerStart(valveTimer, 0);
+            printf("valve opened\n");
+            valveCanOpen = false;
+        }
+
+    }
+    else {
+        // if our sensor measurement interval is > 3sec maybe there should be a timer for checking when we can open the valve again
+        if (xTaskGetTickCount() - lastValveOpenTime >= VALVE_WAIT_TIME) valveCanOpen = true; // once valve is opened we should wait for one min before opening it again
+    }
+}
+
+
+void CO2Controller::controlFan() {
+    std::lock_guard<Fmutex> lock(*guard); // lock modbus read and write
+    bool fanOff = actuators[FAN]->getStatus();
+    if (co2 >= 2000) {
+        if (fanOff) {
+            actuators[FAN]->set(FAN_ON_MAX); // set fan to 100%
+        }
+    }
+    else {
+        if (!fanOff) actuators[FAN]->set(0); // set fan off
+    }
+}
+
 
 void CO2Controller::readSensors() {
+    std::lock_guard<Fmutex> lock(*guard); // lock modbus read
     co2 = sensors[CO2]->readValue();
-    printf("CO2: %.1f\n", co2);
-    vTaskDelay(5);
+    //printf("CO2: %.1f\n", co2);
     temp = sensors[TEMP]->readValue();
-    printf("T: %.1f\n", temp);
-    vTaskDelay(5);
+    //printf("T: %.1f\n", temp);
     rh = sensors[RH]->readValue();
-    printf("RH: %.1f\n", rh);
+    //printf("RH: %.1f\n", rh);
+
+    // set values to dataStruct and pass it to queues
+    sensorData data = {
+        .co2 = co2,
+        .temp = temp,
+        .rh = rh
+    };
+
+    xQueueSend(displayQueue, &data, 10);
+    //xQueueSend(cloudQueue, &data, 10);
 }
 
-void CO2Controller::checkFan() {
-    fanOn = actuators[FAN]->getStatus();
-}
-
-void CO2Controller::checkThresholds() {
-    if (co2 < 600) {
-        printf("CO2 level too low. Opening valve.\n");
-        actuators[FAN]->set(0);
-        controlValve(2000);
+bool CO2Controller::sensorStartUp() {
+    TickType_t start = xTaskGetTickCount();
+    do {
+        std::lock_guard<Fmutex> lock(*guard); // lock modbus reads
+        co2 = sensors[CO2]->readValue();;
+        temp = sensors[TEMP]->readValue();
+        rh = sensors[RH]->readValue();
         vTaskDelay(1000);
-    }
-    if (co2 > 1800) {
-        if (!fanOn) {
-            printf("CO2 level too high! Starting fan.\n");
-            actuators[FAN]->set(500);
-        }
-    }
-    else {
-        if (fanOn) {
-            printf("CO2 level ok. Stopping fan.\n");
-            actuators[FAN]->set(0);
-        }
-    }
+    } while (co2 == 0 && (xTaskGetTickCount() - start) <= START_UP_MAX_TIME); // wait max 3min to warm up
+
+    return co2 != 0;
 }
 
-void CO2Controller::controlValve(size_t time) {
-    actuators[CO2_VALVE]->set(1);
-    vTaskDelay(time);
-    actuators[CO2_VALVE]->set(0);
-}
 
-void CO2Controller::checkMotor() {
-    fanOn = actuators[FAN] -> getStatus();
 
-    if (!fanOn) {
-        printf("Motor stopped. \n");
-    }
-    else {
-        printf("Motor moving. \n");
-    }
-}
+
 
 
 
