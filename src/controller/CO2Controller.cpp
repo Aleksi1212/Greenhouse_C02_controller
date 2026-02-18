@@ -11,7 +11,9 @@
 
 #define VALVE_WAIT_TIME 60000
 #define FAN_ON_MAX 1000
-#define START_UP_MAX_TIME 180000
+#define START_UP_MAX_TIME 300000
+#define CO2_WARM_UP_TIME 15000
+#define VALVE_OPEN_MIN_TIME 800
 #define VALVE_OPEN_MAX_TIME 2000
 #define VALVE_OPEN_TIME 1500
 
@@ -23,7 +25,7 @@ CO2Controller::CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 
 }
 
 // timer to control co2 valve -> we can open valve max 2s
-void CO2Controller::valveTimerCallback(TimerHandle_t xTimer) {
+void CO2Controller::valveTimerCallback(TimerHandle_t xTimer) { // todo check keijo is it okay to use software timer or should this be hardware
     auto instance = static_cast<CO2Controller*>(pvTimerGetTimerID(xTimer));
     instance->actuators[CO2_VALVE]->set(0);
     printf("valve closed\n");
@@ -41,7 +43,8 @@ void CO2Controller::run() {
     valveCanOpen = true;
 
     bool sensorsOK = sensorStartUp(); // warm up co2 sensor until we get accurate results
-    if (!sensorsOK) printf("FAILED TO INITIALIZE SENSORS\n");
+
+    if (!sensorsOK) printf("FAILED TO INITIALIZE SENSORS\n"); // suspend or reboot or something here
 
     TickType_t lastWakeTime = xTaskGetTickCount();
 
@@ -63,17 +66,22 @@ void CO2Controller::controlValve() {
     TickType_t valveOpenPeriod = 0;
 
     if (valveCanOpen) {
-        if (co2 <= co2Level * 0.9) {
+        if (co2 <= co2Level - 70) {
             valveOpenPeriod = VALVE_OPEN_MAX_TIME; // open valve for two secs
             openValve = true;
         }
-        else if (co2 <= co2Level * 0.95) {
+        else if (co2 <= co2Level - 40) {
             valveOpenPeriod = VALVE_OPEN_TIME; // open valve for 1.5 secs
+            openValve = true;
+        }
+        else if (co2 <= co2Level - 20) {
+            valveOpenPeriod = VALVE_OPEN_MIN_TIME; // open valve for 0.8 secs
             openValve = true;
         }
 
         if (openValve) {
             std::lock_guard<Fmutex> lock(*guard); // lock modbus write
+
             lastValveOpenTime = xTaskGetTickCount();
             actuators[CO2_VALVE]->set(1); // open valve
             xTimerChangePeriod(valveTimer, valveOpenPeriod, 0);
@@ -83,7 +91,7 @@ void CO2Controller::controlValve() {
         }
 
     }
-    else {
+    else { // todo check with keijo is it okay to poll this time or should there be a timer
         // if our sensor measurement interval is > 3sec maybe there should be a timer for checking when we can open the valve again
         if (xTaskGetTickCount() - lastValveOpenTime >= VALVE_WAIT_TIME) valveCanOpen = true; // once valve is opened we should wait for one min before opening it again
     }
@@ -92,6 +100,7 @@ void CO2Controller::controlValve() {
 
 void CO2Controller::controlFan() {
     std::lock_guard<Fmutex> lock(*guard); // lock modbus read and write
+
     bool fanOff = actuators[FAN]->getStatus();
     if (co2 >= 2000) {
         if (fanOff) {
@@ -106,6 +115,7 @@ void CO2Controller::controlFan() {
 
 void CO2Controller::readSensors() {
     std::lock_guard<Fmutex> lock(*guard); // lock modbus read
+
     co2 = sensors[CO2]->readValue();
     //printf("CO2: %.1f\n", co2);
     temp = sensors[TEMP]->readValue();
@@ -113,26 +123,35 @@ void CO2Controller::readSensors() {
     rh = sensors[RH]->readValue();
     //printf("RH: %.1f\n", rh);
 
-    // set values to dataStruct and pass it to queues
+    // sensorData struct is passed to queues if data is accurate
     sensorData data = {
         .co2 = co2,
         .temp = temp,
         .rh = rh
     };
 
-    xQueueSend(displayQueue, &data, 10);
-    //xQueueSend(cloudQueue, &data, 10);
+    // if data is not accurate we don't send it forward
+    if (co2 == 0.0 || temp == 0.0 || rh == 0.0) {
+        printf("data not accurate\n");
+    } else {
+        xQueueSend(displayQueue, &data, 0);
+        //xQueueSend(cloudQueue, &data, 10);
+    }
+
 }
 
 bool CO2Controller::sensorStartUp() {
     TickType_t start = xTaskGetTickCount();
+    printf("CO2 Sensor warming up\n");
+    vTaskDelay(CO2_WARM_UP_TIME); // todo check warm up time from data sheet
     do {
         std::lock_guard<Fmutex> lock(*guard); // lock modbus reads
+
         co2 = sensors[CO2]->readValue();;
         temp = sensors[TEMP]->readValue();
         rh = sensors[RH]->readValue();
-        vTaskDelay(1000);
-    } while (co2 == 0 && (xTaskGetTickCount() - start) <= START_UP_MAX_TIME); // wait max 3min to warm up
+        vTaskDelay(2000);
+    } while (co2 == 0 && (xTaskGetTickCount() - start) <= START_UP_MAX_TIME); // wait max 5 min to warm up
 
     return co2 != 0;
 }
