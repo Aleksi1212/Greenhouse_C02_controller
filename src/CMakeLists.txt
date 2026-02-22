@@ -6,12 +6,14 @@ add_executable(${ProjectName}
         blinker.cpp
         blinker.h
 
-#        ipstack/IPStack.cpp
-#        ipstack/IPStack.h
+        ipstack/IPStack.cpp
+        ipstack/IPStack.h
         ipstack/lwipopts.h
         ipstack/tls_common.c
         ipstack/picow_tls_client.c
         ipstack/lwipopts_tls.h
+        ipstack/thingspeak.cpp
+        ipstack/thingspeak.h
 
         i2c/PicoI2C.cpp
         i2c/PicoI2C.h
@@ -89,5 +91,5 @@ set_source_files_properties(
 pico_add_extra_outputs(${ProjectName})
 
 # Disable usb output, enable uart output
-pico_enable_stdio_usb(${PROJECT_NAME} 0)
+pico_enable_stdio_usb(${PROJECT_NAME} 1)
 pico_enable_stdio_uart(${PROJECT_NAME} 1)
