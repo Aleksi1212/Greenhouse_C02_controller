@@ -20,7 +20,7 @@
 class CO2Controller {
 public:
     CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 3> &sensors, const std::array<std::shared_ptr<ActuatorsInterface>, 2> &actuators,
-        const std::shared_ptr<Fmutex> guard, QueueHandle_t controlQueue, QueueHandle_t displayQueue, QueueHandle_t cloudQueue, int co2Level = 1200, TickType_t measureInterval = 3000);
+        const std::shared_ptr<Fmutex> guard, QueueHandle_t controlQueue, QueueHandle_t displayQueue, QueueHandle_t cloudQueue, float co2Level = 1200, TickType_t measureInterval = 30000);
 
 private:
     static void runner(void *params);
@@ -37,11 +37,12 @@ private:
 
     std::shared_ptr<Fmutex> guard;
 
-    int co2Level; // this can be changed through UI or remotely
+    float co2Level; // this can be changed through UI or remotely
     TickType_t measuringInterval;
 
-    TickType_t lastValveOpenTime{};
-    bool valveCanOpen{};
+    //TickType_t lastValveOpenTime{};
+    //bool valveCanOpen{};
+    int measurementCount{};
 
     float co2{};
     float temp{};
