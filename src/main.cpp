@@ -10,6 +10,7 @@
 #include "ModbusClient.h"
 #include <array>
 #include <vector>
+#include <sys/stat.h>
 
 #include "CO2Injection.h"
 #include "CO2Sensor.h"
@@ -18,6 +19,10 @@
 #include "TempSensor.h"
 #include "controller/CO2Controller.h"
 #include "hardware/timer.h"
+#include "Eeprom.h"
+#include "ConfigStorage.h"
+
+
 extern "C" {
 uint32_t read_runtime_ctr(void) {
     return timer_hw->timerawl;
@@ -32,12 +37,9 @@ uint32_t read_runtime_ctr(void) {
 #define BAUD_RATE 9600
 #define STOP_BITS 2 // for real system (pico simualtor also requires 2 stop bits)
 
-
-
-
 int main() {
 
-    static auto uart{std::make_shared<PicoOsUart>(UART_NR, UART_TX_PIN, UART_RX_PIN, BAUD_RATE, STOP_BITS)};
+    /*static auto uart{std::make_shared<PicoOsUart>(UART_NR, UART_TX_PIN, UART_RX_PIN, BAUD_RATE, STOP_BITS)};
     static auto rtu_client{std::make_shared<ModbusClient>(uart)};
 
     static std::array<std::shared_ptr<SensorInterface>, 3> sensors = {
@@ -51,10 +53,13 @@ int main() {
         std::make_shared<CO2Injection>(27)
     };
 
-    static CO2Controller controller(sensors, actuators);
+    static CO2Controller controller(sensors, actuators);*/
 
     stdio_init_all();
     printf("\nBoot\n");
 
     vTaskStartScheduler();
+
+
+    while (true) {};
 }

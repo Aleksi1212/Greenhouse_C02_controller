@@ -49,6 +49,10 @@ add_executable(${ProjectName}
         controller/CO2Controller.cpp
         controller/CO2Controller.h
         controller/ControllerEnums.h
+        storage/ConfigStorage.cpp
+        storage/ConfigStorage.h
+        storage/Eeprom.cpp
+        storage/Eeprom.h
 )
 
 target_include_directories(${ProjectName} PRIVATE
@@ -60,6 +64,8 @@ target_include_directories(${ProjectName} PRIVATE
         ipstack
         sensors
         actuators
+        controller
+        storage
 )
 
 target_compile_definitions(${ProjectName} PRIVATE
