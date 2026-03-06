@@ -53,11 +53,12 @@ int main() {
     // };
 
     // static CO2Controller controller(sensors, actuators);
-    ThingSpeak ts;
-
+    
     stdio_init_all();
     printf("\nBoot\n");
+    // IPStack ip(SSID, PW);
+    ThingSpeak ts;
 
     vTaskStartScheduler();
-    while (1) {printf("hello\n");};
+    while (1) {};
 }
