@@ -20,13 +20,6 @@ uint16_t ModbusRegister::read() {
     return value;
 }
 
-uint8_t ModbusRegister::read_dis_input() {
-    uint8_t value = 0;
-    client->read_discrete_inputs(reg_addr, 1, &value);
-    return value;
-}
-
-
 void ModbusRegister::write(uint16_t value) {
     // only holding register is writable
     if(hr){
