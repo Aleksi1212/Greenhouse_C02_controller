@@ -21,6 +21,11 @@ bool Eeprom::writeBytes(uint16_t address, std::span<const uint8_t> data) {
     std::vector<uint8_t> buffer;
     uint bytesWritten = 0;
 
+    if (data.size() > ENTRY_SIZE) { // we should never write more than 64 bytes on EEPROM
+        printf("EEPROM: write buffer too large\n");
+        return false;
+    }
+
     buffer.push_back((address >> 8) & 0xFF);
     buffer.push_back(address & 0xFF);
 
@@ -37,6 +42,11 @@ bool Eeprom::readBytes(uint16_t address, std::span<uint8_t> buffer) {
     std::vector<uint8_t> addr;
     uint bytesRead = 0;
 
+    if (buffer.size() > ENTRY_SIZE) { // we should read max 64 bytes from EEPROM
+        printf("EEPROM: read buffer too large\n");
+        return false;
+    }
+
     addr.push_back((address >> 8) & 0xFF);
     addr.push_back(address & 0xFF);
 
@@ -51,7 +61,7 @@ bool Eeprom::emptyEeprom() {
     std::vector<uint8_t> buffer(64,0);
 
     while (address < MAX_BYTES) {
-        printf("emptying eeprom\n");
+        //printf("emptying eeprom\n");
         writeBytes(address, buffer);
         address += ENTRY_SIZE;
     }
