@@ -19,6 +19,19 @@ float randomFloat(float min, float max) {
     std::uniform_real_distribution<float> dist(min, max);
     return dist(rng);
 }
+
+void ThingSpeak::test_task(void *param)
+{
+    ThingSpeak *ts = static_cast<ThingSpeak*>(param);
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    while (true) {
+        CloudData_t data = { .field_id = (FieldID)randomInt(1, 5), .field_data = randomFloat(0.0f, 100.0f) };
+        bool ok = ts->send_to_queue(&data, pdMS_TO_TICKS(100));
+        printf("%s\n", ok ? "OK" : "FAIL");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
 /*
     END
 */
@@ -26,14 +39,15 @@ float randomFloat(float min, float max) {
 ThingSpeak::ThingSpeak() : http_server(DEFAULT_HTTP_SERVER)
 {
     cloud_q = xQueueCreate(CLOUD_Q_SIZE, sizeof(CloudData_t));
+    sus_tasks_mtx = xSemaphoreCreateMutex();
 
-    xTaskCreate(ThingSpeak::connect_task, "CONNECT", 2048, 
+    xTaskCreate(ThingSpeak::connect_task, "CONNECT", 4096, 
         static_cast<void*>(this),
         tskIDLE_PRIORITY + 2,
         &connect_task_handle
     );
 
-    xTaskCreate(ThingSpeak::send_task, "SEND", 1024, 
+    xTaskCreate(ThingSpeak::send_task, "SEND", 4096, 
         static_cast<void *>(this), 
         tskIDLE_PRIORITY + 1, 
         &send_task_handle
@@ -41,7 +55,7 @@ ThingSpeak::ThingSpeak() : http_server(DEFAULT_HTTP_SERVER)
     xTaskCreate(ThingSpeak::test_task, "TEST", 512, 
         static_cast<void *>(this), 
         tskIDLE_PRIORITY + 1, 
-        NULL
+        &read_task_handle
     );
 }
 
@@ -55,49 +69,80 @@ void ThingSpeak::dns_callback(const char *name, const ip_addr_t *ipaddr, void *c
         ts->http_server = DEFAULT_HTTP_SERVER;
         printf("DNS resolution failed for %s\n", name);
     }
-    ts->connect_rc = ts->ipstack->connect(ts->http_server, HTTP_PORT);
+    ts->dns_ready = true;
+    // ts->connect_rc = ts->ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+}
+
+bool ThingSpeak::mainframe_connect()
+{
+    bool wifi_connected = true;
+    if (connect_rc == RTE || (connect_rc < CONN && connect_rc > ARG)) {
+        wifi_connected = ipstack->connect_wifi(SSID, PW);
+    }
+    if (wifi_connected) {
+        connect_rc = ipstack->connect(http_server.c_str(), HTTP_PORT);
+    }
+    return connect_rc == 0;
 }
 
 void ThingSpeak::connect_task(void *param)
 {
     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
-    ts->ipstack = std::make_shared<IPStack>(SSID, PW);
+
+    ts->ipstack = std::make_shared<IPStack>();
+    ts->ipstack->connect_wifi(SSID, PW);
 
     ip_addr_t addr;
-    dns_gethostbyname("api.thingspeak.com", &addr, ThingSpeak::dns_callback, param);
+    int err = (int)dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr,
+        ThingSpeak::dns_callback, param);
+
+    while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
+    while (!ts->mainframe_connect()) {
+        printf("Error connecting to mainframe :(\nRetrying...\n");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    // ts->mainframe_connect();
+    // while (true) {
+    //     if (ts->mainframe_connect() >= 0) break;
+    //     printf("Error connecting to mainframe :(\nRetrying...\n");
+    //     vTaskDelay(pdMS_TO_TICKS(1000));
+    // }
+    // while (ts->mainframe_connect() < 0) {
+
+    // }
+    // ts->ipstack = std::make_shared<IPStack>(SSID, PW);
+
+    // ip_addr_t addr;
+    // dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr, ThingSpeak::dns_callback, param);
+    xTaskNotifyGive(ts->read_task_handle);
     xTaskNotifyGive(ts->send_task_handle);
+    vTaskSuspend(NULL);
     // xTaskNotifyGive(read_task_handle);
 
     while (true) {
-        if (ts->connect_rc != 0) {
-            printf("Reconnect to %s\n", ts->http_server);
-            ts->connect_rc = ts->ipstack->connect(ts->http_server, HTTP_PORT);
-        } else {
+        if (ts->connect_rc < 0 && ts->mainframe_connect()) {
             auto tasks = &ts->suspended_tasks;
             int task_count = tasks->size();
             if (task_count > 0) {
+                xSemaphoreTake(ts->sus_tasks_mtx, portMAX_DELAY);
                 printf("Restarting %d network tasks\n", task_count);
                 for (auto it = tasks->begin(); it != tasks->end();) {
-                    vTaskResume(*it);
-                    it = tasks->erase(it);
+                    if (eTaskGetState(*it) == eSuspended) {
+                        vTaskResume(*it);
+                        it = tasks->erase(it);
+                    }
                 }
+                xSemaphoreGive(ts->sus_tasks_mtx);
             }
+
+            vTaskSuspend(NULL);
+            // ts->connect_rc = ts->ipstack->connect(ts->http_server, HTTP_PORT);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
-void ThingSpeak::test_task(void *param)
-{
-    ThingSpeak *ts = static_cast<ThingSpeak*>(param);
-
-    while (true) {
-        CloudData_t data = { .field_id = (FieldID)randomInt(1, 8), .field_data = randomFloat(0.0f, 100.0f) };
-        bool ok = ts->send_to_queue(&data, pdMS_TO_TICKS(100));
-        printf("%s\n", ok ? "OK" : "FAIL");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-    }
-}
 
 void ThingSpeak::send_task(void *param)
 {
@@ -108,34 +153,37 @@ void ThingSpeak::send_task(void *param)
 
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     while (true) {
-        if (ts->connect_rc != 0) {
-            ts->suspended_tasks.push_back(ts->send_task_handle);
-            vTaskSuspend(NULL);
-        } else if (ts->connect_rc == 0 && xQueueReceive(ts->cloud_q, &data, portMAX_DELAY)) {
-            std::ostringstream field;
-            field << "field" << data.field_id << "=" << data.field_data;
-            snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, THINGSPEAK_WRITE_API_KEY, field.str().c_str());
+        // if (ts->connect_rc != 0) {
+        //     ts->suspended_tasks.push_back(ts->send_task_handle);
+        //     vTaskSuspend(NULL);
+        // } else if (ts->connect_rc == 0 && xQueueReceive(ts->cloud_q, &data, portMAX_DELAY)) {
+        if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))) {
+            std::ostringstream http_body_ss;
+            http_body_ss << "api_key="
+                << THINGSPEAK_WRITE_API_KEY
+                << "&field"
+                << data.field_id
+                << "="
+                << data.field_data;
+            auto http_body = http_body_ss.str();
+
+            snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
             printf("Sending: %s\n", http_msg);
-            ts->ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
+
+            int rc = ts->ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
+            if (rc < 0) {
+                printf("Network error suspending task...\n");
+                ts->ipstack->disconnect();
+                ts->connect_rc = rc;
+                xSemaphoreTake(ts->sus_tasks_mtx, portMAX_DELAY);
+                ts->suspended_tasks.push_back(ts->send_task_handle);
+                xSemaphoreGive(ts->sus_tasks_mtx);
+
+                vTaskResume(ts->connect_task_handle);
+                vTaskSuspend(ts->read_task_handle);
+                vTaskSuspend(NULL);
+            }
         }
-
-        // if (ts->connect_rc == 0) {
-        //     if (task_state == eSuspended) vTaskResume(ts->send_task_handle);
-
-        //     if (xQueueReceive(cloud_q, &data, portMAX_DELAY)) {
-        //         std::string http_field = "field" + data.field_id + "=" + data.data + "&";
-        //         http_fields += http_field;
-        //         continue;
-        //     }
-        //     if (http_fields != "") {
-        //         snprintf(http_msg, 512, SEND_DATA_REQ, THINGSPEAK_WRITE_API_KEY, http_fields.c_str());
-        //         ts->write(http_msg, 512, 60);
-        //     }
-        //     http_fields = "";
-        // } else if (ts->connect_rc != 0 && task_state != eSuspended) {
-        //     vTaskSuspend(NULL)
-        // }
-        // vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
