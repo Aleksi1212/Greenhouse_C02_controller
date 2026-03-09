@@ -17,6 +17,7 @@
 #include "ProdualMIO.h"
 #include "RhSensor.h"
 #include "TempSensor.h"
+#include "thingspeak.h"
 #include "controller/CO2Controller.h"
 #include "hardware/timer.h"
 
@@ -24,9 +25,9 @@
 #include "ui/UITask.h"
 
 extern "C" {
-uint32_t read_runtime_ctr(void) {
-    return timer_hw->timerawl;
-}
+    uint32_t read_runtime_ctr(void) {
+        return timer_hw->timerawl;
+    }
 }
 
 #include "blinker.h"
@@ -89,5 +90,5 @@ int main() {
 
     vTaskStartScheduler();
 
-    while(1){};
+    while (1) {};
 }
