@@ -12,7 +12,6 @@ class ModbusRegister {
 public:
     ModbusRegister(std::shared_ptr<ModbusClient> client_, int server_address, int register_address, bool holding_register = true);
     uint16_t read();
-    uint8_t read_dis_input();
     void write(uint16_t value);
 private:
     std::shared_ptr<ModbusClient> client;
