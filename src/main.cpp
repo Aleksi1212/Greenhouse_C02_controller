@@ -1,20 +1,16 @@
 #include <iostream>
 #include <sstream>
-#include <array>
-#include <vector>
-#include <sys/stat.h>
-
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
 #include "hardware/gpio.h"
-#include "hardware/timer.h"
-
 #include "PicoOsUart.h"
 #include "ssd1306.h"
 #include "SensorInterface.h"
 #include "ModbusClient.h"
 #include "Fmutex.h"
+#include <array>
+#include <vector>
 
 #include "CO2Injection.h"
 #include "CO2Sensor.h"
@@ -22,17 +18,10 @@
 #include "RhSensor.h"
 #include "TempSensor.h"
 #include "controller/CO2Controller.h"
+#include "hardware/timer.h"
+
 #include "controller/ControllerEnums.h"
-
-#include "Eeprom.h"
-#include "ConfigStorage.h"
-#include "blinker.h"
-
-#define UART_NR 1
-#define UART_TX_PIN 4
-#define UART_RX_PIN 5
-#define BAUD_RATE 9600
-#define STOP_BITS 2 // for real system (pico simulator also requires 2 stop bits)
+#include "ui/UITask.h"
 
 extern "C" {
 uint32_t read_runtime_ctr(void) {
@@ -40,8 +29,19 @@ uint32_t read_runtime_ctr(void) {
 }
 }
 
+#include "blinker.h"
+
+#define UART_NR 1
+#define UART_TX_PIN 4
+#define UART_RX_PIN 5
+#define BAUD_RATE 9600
+#define STOP_BITS 2 // for real system (pico simualtor also requires 2 stop bits)
+
+
 void dummy_task(void *params) {
+
     auto controllerQueue = static_cast<QueueHandle_t>(params);
+
     sensorData data;
 
     while (true) {
@@ -53,10 +53,13 @@ void dummy_task(void *params) {
     }
 }
 
+
 int main() {
+
     stdio_init_all();
 
     auto guard{std::make_shared<Fmutex>()}; // mutex to guard modbus read/write
+
     auto uart{std::make_shared<PicoOsUart>(UART_NR, UART_TX_PIN, UART_RX_PIN, BAUD_RATE, STOP_BITS)};
     auto rtu_client{std::make_shared<ModbusClient>(uart)};
 
@@ -71,18 +74,20 @@ int main() {
         std::make_shared<CO2Injection>(27)
     };
 
-    QueueHandle_t controllerQueue = xQueueCreate(3, sizeof(int));       // for controller commands
-    QueueHandle_t displayQueue = xQueueCreate(3, sizeof(sensorData));   // controller -> userInterfaceTask
-    QueueHandle_t cloudQueue = xQueueCreate(3, sizeof(sensorData));     // controller -> cloudTask
+    QueueHandle_t controllerQueue = xQueueCreate(3, sizeof(int)); // this could be used to send commands to controller task
+    QueueHandle_t displayQueue = xQueueCreate(3, sizeof(sensorData)); // for controller -> userInterfaceTask
+    QueueHandle_t cloudQueue = xQueueCreate(3, sizeof(sensorData)); // for controller -> cloudTask
 
     CO2Controller controller(sensors, actuators, guard, controllerQueue, displayQueue, cloudQueue);
 
+    UITask uiTask(displayQueue, controllerQueue);
+
     printf("\nBoot\n");
 
-    // dummy task to test controller -> displayQueue
+    // dummy task to see that we can pass values from controller -> dummyTask
     xTaskCreate(dummy_task, "DUMMY_PRINT", 1024, displayQueue, tskIDLE_PRIORITY + 1, NULL);
 
     vTaskStartScheduler();
 
-    while (1) {};
+    while(1){};
 }
