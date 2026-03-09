@@ -81,9 +81,9 @@ int main() {
 
     ThingSpeak thingSpeak(cloudQueue, cloudQueue);
 
-    CO2Controller controller(sensors, actuators, guard, controllerQueue, displayQueue, cloudQueue);
+    // CO2Controller controller(sensors, actuators, guard, controllerQueue, displayQueue, cloudQueue);
 
-    UITask uiTask(displayQueue, controllerQueue);
+    // UITask uiTask(displayQueue, controllerQueue);
 
 
 

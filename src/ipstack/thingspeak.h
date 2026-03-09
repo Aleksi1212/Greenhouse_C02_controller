@@ -8,6 +8,7 @@
 #include "IPStack.h"
 #include <vector>
 #include <string>
+#include "semphr.h"
 // struct CloudData_t {
 //     float co2_level;
 //     float rh;
@@ -65,8 +66,17 @@ struct CloudData_t {
                     "\r\n" \
                     "%s" // HTTP body: api_key=key&field<id>=data...
 
+#define TALKBACK_REQ "POST /talkbacks/%d/commands/execute.json HTTP/1.1\r\n" \
+                    "Host: api.thingspeak.com\r\n" \
+                    "Content-Type: application/x-www-form-urlencoded\r\n" \
+                    "Content-Length: %d\r\n" \
+                    "Accept: */*\r\n" \
+                    "\r\n" \
+                    "%s" // HTTP body: api_key=key
+
 #define CLOUD_Q_SIZE 10
 #define RESULT_BUF_SIZE 2048
+
 
 class ThingSpeak {
 private:
@@ -78,6 +88,8 @@ private:
     TaskHandle_t connect_task_handle;
     TaskHandle_t send_task_handle;
     TaskHandle_t read_task_handle;
+
+    SemaphoreHandle_t ipstack_mtx;
 
     std::string http_server;
     bool dns_ready = false;

@@ -9,6 +9,7 @@
 #include "hardware/gpio.h"
 
 #define LED_1 20
+#define LED_2 21
 #define LED_3 22
 
 /*
@@ -44,22 +45,24 @@ float randomFloat(float min, float max) {
 ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q)
 : http_server(DEFAULT_HTTP_SERVER), cloud_q(_cloud_q), controller_q(_controller_q)
 {
+    ipstack_mtx = xSemaphoreCreateMutex();
+
     xTaskCreate(ThingSpeak::connect_task, "CONNECT", 4096, 
         static_cast<void*>(this),
         tskIDLE_PRIORITY + 2,
         &connect_task_handle
     );
 
-    xTaskCreate(ThingSpeak::send_task, "SEND", 4096, 
-        static_cast<void *>(this), 
-        tskIDLE_PRIORITY + 1, 
-        &send_task_handle
-    );
-    // xTaskCreate(ThingSpeak::test_task, "TEST", 2048, 
+    // xTaskCreate(ThingSpeak::send_task, "SEND", 4096, 
     //     static_cast<void *>(this), 
     //     tskIDLE_PRIORITY + 1, 
-    //     &read_task_handle
+    //     &send_task_handle
     // );
+    xTaskCreate(ThingSpeak::read_task, "READ", 2048, 
+        static_cast<void *>(this), 
+        tskIDLE_PRIORITY + 1, 
+        &read_task_handle
+    );
 }
 
 void ThingSpeak::dns_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
@@ -84,68 +87,105 @@ void ThingSpeak::connect_task(void *param)
     ip_addr_t addr;
     int err = (int)dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr,
         ThingSpeak::dns_callback, param);
-
+        
     while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
+    // ts->ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
 
     gpio_init(LED_1);
     gpio_set_dir(LED_1, GPIO_OUT);
     gpio_put(LED_1, (*ts->ipstack)());
 
-    //xTaskNotifyGive(ts->read_task_handle);
-    xTaskNotifyGive(ts->send_task_handle);
+    xTaskNotifyGive(ts->read_task_handle);
+    // xTaskNotifyGive(ts->send_task_handle);
     vTaskSuspend(NULL);
 }
 
 
-void ThingSpeak::send_task(void *param)
+// void ThingSpeak::send_task(void *param)
+// {
+//     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
+//     auto ipstack = ts->ipstack;
+
+//     char http_msg[512];
+//     sensorData data;
+//     unsigned char *buffer = new unsigned char[RESULT_BUF_SIZE];
+
+//     gpio_init(LED_2);
+//     gpio_set_dir(LED_2, GPIO_OUT);
+
+//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//     while (true) {
+//         if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))) {
+//             xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
+//             int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+//             if (rc == 0) {
+//                 gpio_put(LED_2, true);
+//                 std::ostringstream http_body_ss;
+//                 http_body_ss << "api_key="
+//                     << THINGSPEAK_WRITE_API_KEY
+//                     << "&field1="
+//                     << data.co2
+//                     << "&field2="
+//                     << data.rh
+//                     << "&field3="
+//                     << data.temp;
+//                 auto http_body = http_body_ss.str();
+    
+//                 snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
+//                 printf("Sending: %s\n", http_msg);
+    
+//                 rc = ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
+//                 if (rc > 0) {
+//                     auto rv = ipstack->read(buffer, RESULT_BUF_SIZE, 2000);
+//                     buffer[rv] = 0;
+//                     printf("rv=%d\n%s\n", rv, buffer);
+//                 } else {
+//                     printf("Fail\n");
+//                 }
+//                 ipstack->disconnect();
+//             }
+//             xSemaphoreGive(ts->ipstack_mtx);
+//         }
+//         gpio_put(LED_2, false);
+//     }
+// }
+
+void ThingSpeak::read_task(void *param)
 {
     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
 
-    char http_msg[512];
-    sensorData data;
-    unsigned char *buffer = new unsigned char[RESULT_BUF_SIZE];
-
     gpio_init(LED_3);
     gpio_set_dir(LED_3, GPIO_OUT);
+    
+    char http_msg[512];
+    std::ostringstream http_body_ss;
+    http_body_ss << "api_key=" << THINGSPEAK_TALKBACK_API_KEY;
+    auto http_body = http_body_ss.str();
+    snprintf(http_msg, sizeof(http_msg), TALKBACK_REQ,
+        THINGSPEAK_TALKBACK_ID, http_body.size(), http_body.c_str());
+    
+    unsigned char *result_buffer = new unsigned char[RESULT_BUF_SIZE];
 
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    auto ipstack = ts->ipstack;
     while (true) {
-        if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))
-            && ts->ipstack->connect(ts->http_server.c_str(), HTTP_PORT) == 0)
-        {
+        xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
+        int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+        if (rc == 0) {
             gpio_put(LED_3, true);
-            // std::ostringstream http_body_ss;
-            // http_body_ss << "api_key="
-            //     << THINGSPEAK_WRITE_API_KEY
-            //     << "&field"
-            //     << data.field_id
-            //     << "="
-            //     << data.field_data;
-            // auto http_body = http_body_ss.str();
-            std::ostringstream http_body_ss;
-            http_body_ss << "api_key="
-                << THINGSPEAK_WRITE_API_KEY
-                << "&field1="
-                << data.co2
-                << "&field2="
-                << data.rh
-                << "&field3="
-                << data.temp;
-            auto http_body = http_body_ss.str();
-
-            snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
-            printf("Sending: %s\n", http_msg);
-
-            int rc = ts->ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
+            
+            printf("Sending: %d\n", http_msg);
+            rc = ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
             if (rc > 0) {
-                auto rv = ts->ipstack->read(buffer, RESULT_BUF_SIZE, 2000);
-                buffer[rv] = 0;
-                printf("rv=%d\n%s\n", rv, buffer);
-            } else {
-                printf("Fail\n");
+                auto rv = ipstack->read(result_buffer, RESULT_BUF_SIZE, 2000);
+                result_buffer[rv] = 0;
+                printf("rv=%d\n%s\n", rv, result_buffer);
             }
-            ts->ipstack->disconnect();
+            ipstack->disconnect();
         }
         gpio_put(LED_3, false);
+
+        xSemaphoreGive(ts->ipstack_mtx);
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
