@@ -3,4 +3,4 @@ build
 .DS_Store
 .idea
 src/network_info.h
-
+.vscode
