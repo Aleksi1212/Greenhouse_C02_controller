@@ -13,25 +13,20 @@
 #define DUMP_BYTES(A, B) {}
 
 
-IPStack::IPStack(/*const char *ssid, const char *pw*/) : tcp_pcb{nullptr}, dropped{0}, count{0}, wr{0}, rd{0}, connected{false} {
+IPStack::IPStack(const char *ssid, const char *pw) : tcp_pcb{nullptr}, dropped{0}, count{0}, wr{0}, rd{0}, connected{false} {
     if (cyw43_arch_init()) {
         DEBUG_printf("failed to initialise\n");
         return;
     }
     cyw43_arch_enable_sta_mode();
 
-    // DEBUG_printf("Connecting to Wi-Fi...\n");
-    // if (cyw43_arch_wifi_connect_timeout_ms(ssid, pw, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-    //     DEBUG_printf("Failed to connect.\n");
-    // } else {
-    //     DEBUG_printf("Connected.\n");
-    // }
-}
-
-int IPStack::connect_wifi(const char *ssid, const char *pw)
-{
     DEBUG_printf("Connecting to Wi-Fi...\n");
-    return cyw43_arch_wifi_connect_timeout_ms(ssid, pw, CYW43_AUTH_WPA2_AES_PSK, 30000);
+    if (cyw43_arch_wifi_connect_timeout_ms(ssid, pw, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+        DEBUG_printf("Failed to connect.\n");
+    } else {
+        DEBUG_printf("Connected.\n");
+    }
+
 }
 
 int IPStack::connect(uint32_t hostname, int port) {
@@ -39,15 +34,12 @@ int IPStack::connect(uint32_t hostname, int port) {
 }
 
 int IPStack::connect(const char *hostname, int port) {
+    // check if the hostname requires DNS resolution
     if (!ip4addr_aton(hostname, &remote_addr)) {
+        // dns not implemented yet
         return ERR_ARG;
     }
-
-    // Clean up any existing PCB before allocating a new one
-    if (tcp_pcb != nullptr) {
-        disconnect(); 
-    }
-
+    // open a socket connection
     DEBUG_printf("Connecting to %s port %u\n", ip4addr_ntoa(&remote_addr), port);
     tcp_pcb = tcp_new_ip_type(IP_GET_TYPE(remote_addr));
     if (!tcp_pcb) {
@@ -61,13 +53,12 @@ int IPStack::connect(const char *hostname, int port) {
     tcp_recv(tcp_pcb, IPStack::tcp_client_recv);
     tcp_err(tcp_pcb, IPStack::tcp_client_err);
 
+    // cyw43_arch_lwip_begin/end should be used around calls into lwIP to ensure correct locking.
+    // You can omit them if you are in a callback from lwIP. Note that when using pico_cyw_arch_poll
+    // these calls are a no-op and can be omitted, but it is a good practice to use them in
+    // case you switch the cyw43_arch type later.
     cyw43_arch_lwip_begin();
     err_t err = tcp_connect(tcp_pcb, &remote_addr, port, IPStack::tcp_client_connected);
-    if (err != ERR_OK) {
-        // If the connection fails immediately, free the PCB!
-        tcp_close(tcp_pcb);
-        tcp_pcb = nullptr;
-    }
     cyw43_arch_lwip_end();
 
     return err;
@@ -139,13 +130,11 @@ err_t IPStack::tcp_client_poll(void *arg, struct tcp_pcb *tpcb) {
  *            ERR_RST: the connection was reset by the remote host
  */
 void IPStack::tcp_client_err(void *arg, err_t err) {
-    auto state = static_cast<IPStack *>(arg);
+    //auto state = static_cast<IPStack *>(arg);
     if (err != ERR_ABRT) {
         DEBUG_printf("tcp_client_err %d\n", err);
         //state->tcp_result(err);
     }
-    state->tcp_pcb = nullptr;
-    state->connected = false;
 }
 
 /** Function prototype for tcp receive callback functions. Called when data has
@@ -162,9 +151,6 @@ err_t IPStack::tcp_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, 
     auto state = static_cast<IPStack *>(arg);
     if (!p) {
         // connection has been closed - do we need to react to this somehow?
-        tcp_close(tpcb);
-        state->tcp_pcb = nullptr;
-        state->connected = false;
         return ERR_OK;
     }
     // this method is callback from lwIP, so cyw43_arch_lwip_begin is not required, however you
@@ -255,12 +241,12 @@ int IPStack::write(unsigned char *buffer, int len, int timeout) {
     err_t err = tcp_write(tcp_pcb, buffer, len, TCP_WRITE_FLAG_COPY);
     if (err != ERR_OK) {
         DEBUG_printf("Failed to write data %d\n", err);
-        rv = (int)err;
+        rv = -1;
     }
-    // // headers suggest that this should be called to make sure that data is sent right away
-    // // however there is TCB_WRITE_FLAG_MORE that possibly indicates the same thing??
+    // headers suggest that this should be called to make sure that data is sent right away
+    // however there is TCB_WRITE_FLAG_MORE that possibly indicates the same thing??
     if (tcp_output(tcp_pcb) != ERR_OK) {
-        // failed! What should I do now? I dont know :(
+        // failed! What should I do now?
         rv = -2;
     }
 

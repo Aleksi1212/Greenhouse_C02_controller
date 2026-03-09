@@ -7,7 +7,6 @@
 #include "queue.h"
 #include "IPStack.h"
 #include <vector>
-#include "semphr.h"
 #include <string>
 // struct CloudData_t {
 //     float co2_level;
@@ -67,6 +66,7 @@ struct CloudData_t {
                     "%s" // HTTP body: api_key=key&field<id>=data...
 
 #define CLOUD_Q_SIZE 10
+#define RESULT_BUF_SIZE 2048
 
 class ThingSpeak {
 private:
@@ -79,10 +79,6 @@ private:
     TaskHandle_t send_task_handle;
     TaskHandle_t read_task_handle;
 
-    SemaphoreHandle_t sus_tasks_mtx;
-    std::vector<TaskHandle_t> suspended_tasks;
-
-    int connect_rc = -1;
     std::string http_server;
     bool dns_ready = false;
 
@@ -93,9 +89,6 @@ private:
     static void read_task(void *param);
 
     static void test_task(void *param);
-
-    bool mainframe_connect();
-
 public:
     ThingSpeak();
     bool send_to_queue(std::vector<CloudData_t*> data, TickType_t ticksToWait);
