@@ -39,7 +39,7 @@ extern "C" {
 #define STOP_BITS 2 // for real system (pico simualtor also requires 2 stop bits)
 
 
-void dummy_task(void *params) {
+/*void dummy_task(void *params) {
 
     auto controllerQueue = static_cast<QueueHandle_t>(params);
 
@@ -52,7 +52,7 @@ void dummy_task(void *params) {
             printf("RH: %.1f\n", data.rh);
         }
     }
-}
+}*/
 
 
 int main() {
@@ -79,14 +79,18 @@ int main() {
     QueueHandle_t displayQueue = xQueueCreate(3, sizeof(sensorData)); // for controller -> userInterfaceTask
     QueueHandle_t cloudQueue = xQueueCreate(3, sizeof(sensorData)); // for controller -> cloudTask
 
+    ThingSpeak thingSpeak(cloudQueue, cloudQueue);
+
     CO2Controller controller(sensors, actuators, guard, controllerQueue, displayQueue, cloudQueue);
 
     UITask uiTask(displayQueue, controllerQueue);
 
+
+
     printf("\nBoot\n");
 
     // dummy task to see that we can pass values from controller -> dummyTask
-    xTaskCreate(dummy_task, "DUMMY_PRINT", 1024, displayQueue, tskIDLE_PRIORITY + 1, NULL);
+    //xTaskCreate(dummy_task, "DUMMY_PRINT", 1024, displayQueue, tskIDLE_PRIORITY + 1, NULL);
 
     vTaskStartScheduler();
 

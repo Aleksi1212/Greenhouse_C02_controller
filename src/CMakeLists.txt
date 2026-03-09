@@ -55,6 +55,7 @@ add_executable(${ProjectName}
         ui/UITask.h
         input/RotaryEncoder.cpp
         input/RotaryEncoder.h
+        network_info.h
 )
 
 target_include_directories(${ProjectName} PRIVATE

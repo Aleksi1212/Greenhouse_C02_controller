@@ -5,7 +5,7 @@
 #include <sstream>
 #include <random>
 #include <string.h>
-#include <ControllerEnums.h>
+#include "controller/ControllerEnums.h"
 
 /*
     FOR TESTING
@@ -83,7 +83,7 @@ void ThingSpeak::connect_task(void *param)
 
     while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
 
-    xTaskNotifyGive(ts->read_task_handle);
+    //xTaskNotifyGive(ts->read_task_handle);
     xTaskNotifyGive(ts->send_task_handle);
     vTaskSuspend(NULL);
 }
@@ -118,7 +118,7 @@ void ThingSpeak::send_task(void *param)
                 << "&field2="
                 << data.rh
                 << "&field3="
-                << data.temp
+                << data.temp;
             auto http_body = http_body_ss.str();
 
             snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());

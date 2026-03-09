@@ -4,7 +4,7 @@
 
 #include "CO2Controller.h"
 #include <vector>
-#include <sys/stat.h>
+//#include <sys/stat.h>
 #include <mutex>
 
 #include "queue.h"
@@ -19,7 +19,7 @@ CO2Controller::CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 
 {
     measurementCount = 1; // set this to one so we can open valve during first round if needed
     valveTimer = xTimerCreate("VALVE_TIMER", VALVE_OPEN_TIME, pdFALSE, this, valveTimerCallback);
-    xTaskCreate(CO2Controller::runner, "CONTROLLER", 4096, this, tskIDLE_PRIORITY + 1, &handle);
+    xTaskCreate(CO2Controller::runner, "CONTROLLER", 2048, this, tskIDLE_PRIORITY + 1, &handle);
 }
 
 // timer to control co2 valve -> we can open valve max 2s
@@ -42,6 +42,7 @@ void CO2Controller::run() {
 
     while (true) {
 
+        //printf("inside controller\n");
         readSensors();
         controlFan();
         controlValve();
@@ -108,7 +109,7 @@ void CO2Controller::readSensors() {
         printf("data not accurate\n");
     } else {
         xQueueSend(displayQueue, &data, 0);
-        //xQueueSend(cloudQueue, &data, 10);
+        xQueueSend(cloudQueue, &data, 0);
     }
     ++measurementCount;
 
