@@ -5,6 +5,11 @@
 #include <sstream>
 #include <random>
 #include <string.h>
+#include "controller/ControllerEnums.h"
+#include "hardware/gpio.h"
+
+#define LED_1 20
+#define LED_3 22
 
 /*
     FOR TESTING
@@ -20,27 +25,25 @@ float randomFloat(float min, float max) {
     return dist(rng);
 }
 
-void ThingSpeak::test_task(void *param)
-{
-    ThingSpeak *ts = static_cast<ThingSpeak*>(param);
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+// void ThingSpeak::test_task(void *param)
+// {
+//     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
+//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    while (true) {
-        CloudData_t data = { .field_id = (FieldID)randomInt(1, 5), .field_data = randomFloat(0.0f, 100.0f) };
-        bool ok = ts->send_to_queue(&data, pdMS_TO_TICKS(100));
-        printf("%s\n", ok ? "OK" : "FAIL");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-    }
-}
+//     while (true) {
+//         CloudData_t data = { .field_id = (FieldID)randomInt(1, 5), .field_data = randomFloat(0.0f, 100.0f) };
+//         bool ok = ts->send_to_queue(&data, pdMS_TO_TICKS(100));
+//         printf("%s\n", ok ? "OK" : "FAIL");
+//         vTaskDelay(pdMS_TO_TICKS(5000));
+//     }
+// }
 /*
     END
 */
 
-ThingSpeak::ThingSpeak() : http_server(DEFAULT_HTTP_SERVER)
+ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q)
+: http_server(DEFAULT_HTTP_SERVER), cloud_q(_cloud_q), controller_q(_controller_q)
 {
-    cloud_q = xQueueCreate(CLOUD_Q_SIZE, sizeof(CloudData_t));
-    sus_tasks_mtx = xSemaphoreCreateMutex();
-
     xTaskCreate(ThingSpeak::connect_task, "CONNECT", 4096, 
         static_cast<void*>(this),
         tskIDLE_PRIORITY + 2,
@@ -84,7 +87,11 @@ void ThingSpeak::connect_task(void *param)
 
     while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
 
-    xTaskNotifyGive(ts->read_task_handle);
+    gpio_init(LED_1);
+    gpio_set_dir(LED_1, GPIO_OUT);
+    gpio_put(LED_1, (*ts->ipstack)());
+
+    //xTaskNotifyGive(ts->read_task_handle);
     xTaskNotifyGive(ts->send_task_handle);
     vTaskSuspend(NULL);
 }
@@ -95,21 +102,35 @@ void ThingSpeak::send_task(void *param)
     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
 
     char http_msg[512];
-    CloudData_t data;
+    sensorData data;
     unsigned char *buffer = new unsigned char[RESULT_BUF_SIZE];
+
+    gpio_init(LED_3);
+    gpio_set_dir(LED_3, GPIO_OUT);
 
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     while (true) {
         if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))
             && ts->ipstack->connect(ts->http_server.c_str(), HTTP_PORT) == 0)
         {
+            gpio_put(LED_3, true);
+            // std::ostringstream http_body_ss;
+            // http_body_ss << "api_key="
+            //     << THINGSPEAK_WRITE_API_KEY
+            //     << "&field"
+            //     << data.field_id
+            //     << "="
+            //     << data.field_data;
+            // auto http_body = http_body_ss.str();
             std::ostringstream http_body_ss;
             http_body_ss << "api_key="
                 << THINGSPEAK_WRITE_API_KEY
-                << "&field"
-                << data.field_id
-                << "="
-                << data.field_data;
+                << "&field1="
+                << data.co2
+                << "&field2="
+                << data.rh
+                << "&field3="
+                << data.temp;
             auto http_body = http_body_ss.str();
 
             snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
@@ -125,20 +146,6 @@ void ThingSpeak::send_task(void *param)
             }
             ts->ipstack->disconnect();
         }
+        gpio_put(LED_3, false);
     }
-}
-
-bool ThingSpeak::send_to_queue(std::vector<CloudData_t*> data, TickType_t ticksToWait)
-{
-    int count = 0;
-    for (auto it = data.begin(); it != data.end(); ++it) {
-        if (count == CLOUD_Q_SIZE) break;
-        bool fail = xQueueSendToBack(cloud_q, *it, ticksToWait) != pdPASS;
-        if (fail) return false;
-    }
-    return true;
-}
-bool ThingSpeak::send_to_queue(CloudData_t *data, TickType_t ticksToWait)
-{
-    return xQueueSendToBack(cloud_q, data, ticksToWait) == pdPASS;
 }

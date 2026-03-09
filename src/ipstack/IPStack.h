@@ -32,6 +32,8 @@ public:
 
     static const int BUF_SIZE{2048};
     static const int POLL_TIME_S{5};
+
+    bool operator()();
 private:
     struct tcp_pcb *tcp_pcb;
     ip_addr_t remote_addr;
@@ -41,6 +43,7 @@ private:
     uint16_t wr; // write index
     uint16_t rd; // read index
     bool connected;
+    bool wifi_connected;
 };
 
 

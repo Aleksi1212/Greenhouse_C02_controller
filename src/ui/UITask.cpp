@@ -37,11 +37,17 @@ void UITask::run() {
     while (true) {
         // "drains" the queue keeping only the newest reading
         sensorData data;
-        while (xQueueReceive(displayQueue, &data, 0) == pdPASS) {
+        /*while (xQueueReceive(displayQueue, &data, 0) == pdPASS) {
+            latestData = data;
+            printf("received data in ui: %f\n", latestData.co2);
+        }*/
+
+        if (xQueueReceive(displayQueue, &data, 0) == pdPASS) {
             latestData = data;
         }
 
         handleInput();
+        //printf("inside ui task\n");
 
         display->fill(0);
         if (currentScreen == Screen::WIFI_MENU) {
@@ -104,6 +110,7 @@ void UITask::drawHomeScreen() {
 
     snprintf(buf, sizeof(buf), "CO2: %4.0f ppm", latestData.co2);
     display->text(buf, 0, 20);
+    //printf("inside drawHomeScree: %s\n", buf);
 
     snprintf(buf, sizeof(buf), "SP:  %4d ppm", currentSetpoint);
     display->text(buf, 0, 30);

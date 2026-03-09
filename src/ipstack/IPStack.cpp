@@ -13,8 +13,9 @@
 #define DUMP_BYTES(A, B) {}
 
 
-IPStack::IPStack(const char *ssid, const char *pw) : tcp_pcb{nullptr}, dropped{0}, count{0}, wr{0}, rd{0}, connected{false} {
+IPStack::IPStack(const char *ssid, const char *pw) : tcp_pcb{nullptr}, dropped{0}, count{0}, wr{0}, rd{0}, connected{false}, wifi_connected{false} {
     if (cyw43_arch_init()) {
+        wifi_connected = false;
         DEBUG_printf("failed to initialise\n");
         return;
     }
@@ -22,12 +23,16 @@ IPStack::IPStack(const char *ssid, const char *pw) : tcp_pcb{nullptr}, dropped{0
 
     DEBUG_printf("Connecting to Wi-Fi...\n");
     if (cyw43_arch_wifi_connect_timeout_ms(ssid, pw, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+        wifi_connected = false;
         DEBUG_printf("Failed to connect.\n");
     } else {
+        wifi_connected = true;
         DEBUG_printf("Connected.\n");
     }
 
 }
+
+bool IPStack::operator()() { return wifi_connected; }
 
 int IPStack::connect(uint32_t hostname, int port) {
     return ERR_ARG;
