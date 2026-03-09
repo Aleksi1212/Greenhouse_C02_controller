@@ -90,7 +90,7 @@ private:
 
     static void test_task(void *param);
 public:
-    ThingSpeak();
+    ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q);
     bool send_to_queue(std::vector<CloudData_t*> data, TickType_t ticksToWait);
     bool send_to_queue(CloudData_t *data, TickType_t ticksToWait);
 };
