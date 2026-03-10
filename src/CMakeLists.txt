@@ -60,6 +60,7 @@ add_executable(${ProjectName}
 
 target_include_directories(${ProjectName} PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/../lib/jsmn
         modbus
         uart
         i2c
