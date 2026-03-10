@@ -7,40 +7,11 @@
 #include <string.h>
 #include "controller/ControllerEnums.h"
 #include "hardware/gpio.h"
+#include <iostream>
 
 #define LED_1 20
 #define LED_2 21
 #define LED_3 22
-
-/*
-    FOR TESTING
-*/
-int randomInt(int min, int max) {
-    static std::mt19937 rng(std::random_device{}()); // seeded once
-    std::uniform_int_distribution<int> dist(min, max);
-    return dist(rng);
-}
-float randomFloat(float min, float max) {
-    static std::mt19937 rng(std::random_device{}()); // seeded once
-    std::uniform_real_distribution<float> dist(min, max);
-    return dist(rng);
-}
-
-// void ThingSpeak::test_task(void *param)
-// {
-//     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
-//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-//     while (true) {
-//         CloudData_t data = { .field_id = (FieldID)randomInt(1, 5), .field_data = randomFloat(0.0f, 100.0f) };
-//         bool ok = ts->send_to_queue(&data, pdMS_TO_TICKS(100));
-//         printf("%s\n", ok ? "OK" : "FAIL");
-//         vTaskDelay(pdMS_TO_TICKS(5000));
-//     }
-// }
-/*
-    END
-*/
 
 ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q)
 : http_server(DEFAULT_HTTP_SERVER), cloud_q(_cloud_q), controller_q(_controller_q)
@@ -53,11 +24,11 @@ ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q)
         &connect_task_handle
     );
 
-    // xTaskCreate(ThingSpeak::send_task, "SEND", 4096, 
-    //     static_cast<void *>(this), 
-    //     tskIDLE_PRIORITY + 1, 
-    //     &send_task_handle
-    // );
+    xTaskCreate(ThingSpeak::send_task, "SEND", 4096, 
+        static_cast<void *>(this), 
+        tskIDLE_PRIORITY + 1, 
+        &send_task_handle
+    );
     xTaskCreate(ThingSpeak::read_task, "READ", 2048, 
         static_cast<void *>(this), 
         tskIDLE_PRIORITY + 1, 
@@ -89,70 +60,125 @@ void ThingSpeak::connect_task(void *param)
         ThingSpeak::dns_callback, param);
         
     while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
-    // ts->ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
 
     gpio_init(LED_1);
     gpio_set_dir(LED_1, GPIO_OUT);
     gpio_put(LED_1, (*ts->ipstack)());
 
     xTaskNotifyGive(ts->read_task_handle);
-    // xTaskNotifyGive(ts->send_task_handle);
+    xTaskNotifyGive(ts->send_task_handle);
     vTaskSuspend(NULL);
 }
 
 
-// void ThingSpeak::send_task(void *param)
-// {
-//     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
-//     auto ipstack = ts->ipstack;
+void ThingSpeak::send_task(void *param)
+{
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-//     char http_msg[512];
-//     sensorData data;
-//     unsigned char *buffer = new unsigned char[RESULT_BUF_SIZE];
+    ThingSpeak *ts = static_cast<ThingSpeak*>(param);
+    auto ipstack = ts->ipstack;
 
-//     gpio_init(LED_2);
-//     gpio_set_dir(LED_2, GPIO_OUT);
+    gpio_init(LED_2);
+    gpio_set_dir(LED_2, GPIO_OUT);
 
-//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-//     while (true) {
-//         if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))) {
-//             xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
-//             int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
-//             if (rc == 0) {
-//                 gpio_put(LED_2, true);
-//                 std::ostringstream http_body_ss;
-//                 http_body_ss << "api_key="
-//                     << THINGSPEAK_WRITE_API_KEY
-//                     << "&field1="
-//                     << data.co2
-//                     << "&field2="
-//                     << data.rh
-//                     << "&field3="
-//                     << data.temp;
-//                 auto http_body = http_body_ss.str();
+    char http_msg[512];
+    sensorData data;
+    unsigned char *buffer = new unsigned char[RESULT_BUF_SIZE];
+
+    while (true) {
+        if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))) {
+            xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
+            int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+            if (rc == 0) {
+                gpio_put(LED_2, true);
+                std::ostringstream http_body_ss;
+                http_body_ss << "api_key="
+                    << THINGSPEAK_WRITE_API_KEY
+                    << "&field1="
+                    << data.co2
+                    << "&field2="
+                    << data.rh
+                    << "&field3="
+                    << data.temp;
+                auto http_body = http_body_ss.str();
     
-//                 snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
-//                 printf("Sending: %s\n", http_msg);
+                snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
+                printf("Sending: %s\n", http_msg);
     
-//                 rc = ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
-//                 if (rc > 0) {
-//                     auto rv = ipstack->read(buffer, RESULT_BUF_SIZE, 2000);
-//                     buffer[rv] = 0;
-//                     printf("rv=%d\n%s\n", rv, buffer);
-//                 } else {
-//                     printf("Fail\n");
-//                 }
-//                 ipstack->disconnect();
-//             }
-//             xSemaphoreGive(ts->ipstack_mtx);
-//         }
-//         gpio_put(LED_2, false);
-//     }
-// }
+                rc = ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
+                if (rc > 0) {
+                    auto rv = ipstack->read(buffer, RESULT_BUF_SIZE, 2000);
+                    buffer[rv] = 0;
+                    printf("rv=%d\n%s\n", rv, buffer);
+                } else {
+                    printf("Fail\n");
+                }
+                ipstack->disconnect();
+            }
+            xSemaphoreGive(ts->ipstack_mtx);
+        }
+        gpio_put(LED_2, false);
+    }
+}
+
+bool ThingSpeak::parse_talkback_response_json(const char *response, int *co2_set_point)
+{
+    jsmn_parser parser;
+    jsmn_init(&parser);
+
+    std::string response_str = response;
+
+    std::string status = "";
+    size_t status_prefix_pos = response_str.find("Status: "); 
+    if (status_prefix_pos == std::string::npos) return false;
+
+    size_t start_index = status_prefix_pos + 8;
+    size_t end_index = response_str.find('\n', start_index);
+    status = response_str.substr(start_index, end_index - start_index);
+
+    if (!status.empty() && status.back() == '\r') {
+        status.pop_back();
+    } else {
+        return false;
+    }
+
+    if (status != "200 OK") return false;
+
+    std::string json = "";
+    size_t json_start = response_str.find("{"); 
+    size_t json_end = response_str.rfind("}");
+    if (json_start == std::string::npos || json_end == std::string::npos) return false;
+
+    json = response_str.substr(json_start, json_end - json_start + 1);
+    jsmntok_t tokens[JSMN_TOKENS_SIZE];
+    int r = jsmn_parse(&parser, json.c_str(), json.size(), tokens, JSMN_TOKENS_SIZE);
+    if (r < 0) return false;
+
+    for (int i = 0; i < JSMN_TOKENS_SIZE; i++) {
+        if (tokens[i].type == JSMN_STRING) {
+            std::string json_val = json.substr(tokens[i].start, tokens[i].end - tokens[i].start);
+            char command[] = "SET_CO2|";
+            if (json_val.find(command) != std::string::npos) {
+                std::stringstream co2_set_point_ss(json_val.substr(strlen(command)));
+                int n;
+                if (co2_set_point_ss >> n) {
+                    *co2_set_point = n;
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        }
+    }
+    return false;
+}
 
 void ThingSpeak::read_task(void *param)
 {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
+    auto ipstack = ts->ipstack;
 
     gpio_init(LED_3);
     gpio_set_dir(LED_3, GPIO_OUT);
@@ -166,26 +192,33 @@ void ThingSpeak::read_task(void *param)
     
     unsigned char *result_buffer = new unsigned char[RESULT_BUF_SIZE];
 
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    auto ipstack = ts->ipstack;
     while (true) {
         xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
         int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
         if (rc == 0) {
             gpio_put(LED_3, true);
             
-            printf("Sending: %d\n", http_msg);
+            printf("Sending: %s\n", http_msg);
             rc = ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
             if (rc > 0) {
                 auto rv = ipstack->read(result_buffer, RESULT_BUF_SIZE, 2000);
                 result_buffer[rv] = 0;
-                printf("rv=%d\n%s\n", rv, result_buffer);
+                int co2_set_point;
+                if (ts->parse_talkback_response_json((const char*)result_buffer, &co2_set_point)) {
+                    if (xQueueSendToBack(ts->controller_q, &co2_set_point, portMAX_DELAY) == pdTRUE) {
+                        std::cout << "NEW CO2_SET_POINT: " << co2_set_point << std::endl;
+                    } else {
+                        std::cout << "ERROR SETTING CO2_SET_POINT" << std::endl;
+                    }
+                } else {
+                    std::cout << "NO DATA IN TALKBACK" << std::endl;
+                }
             }
             ipstack->disconnect();
         }
         gpio_put(LED_3, false);
 
         xSemaphoreGive(ts->ipstack_mtx);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }

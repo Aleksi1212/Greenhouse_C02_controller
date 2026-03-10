@@ -6,9 +6,13 @@
 #include "task.h"
 #include "queue.h"
 #include "IPStack.h"
+#include "queue.h"
 #include <vector>
 #include <string>
 #include "semphr.h"
+
+#define JSMN_STATIC
+#include "jsmn.h"
 // struct CloudData_t {
 //     float co2_level;
 //     float rh;
@@ -76,6 +80,7 @@ struct CloudData_t {
 
 #define CLOUD_Q_SIZE 10
 #define RESULT_BUF_SIZE 2048
+#define JSMN_TOKENS_SIZE 20
 
 
 class ThingSpeak {
@@ -101,6 +106,8 @@ private:
     static void read_task(void *param);
 
     static void test_task(void *param);
+
+    bool parse_talkback_response_json(const char *response, int *co2_set_point);
 public:
     ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q);
 };
