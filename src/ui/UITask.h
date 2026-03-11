@@ -23,6 +23,8 @@ private:
 
     void drawHomeScreen();
     void drawSetpointScreen();
+    void drawSetpointSelectScreen();
+    void drawSetpointSavedScreen();
     void drawWifiMenuScreen();
     void drawWifiSavedScreen();
     void drawWifiNewSSIDScreen();
@@ -33,7 +35,6 @@ private:
 
     void displayWifiSetInfo();
 
-    // display is created inside run() after the scheduler starts
     std::shared_ptr<ssd1306os> display;
     QueueHandle_t displayQueue;
     QueueHandle_t controllerQueue;
@@ -41,12 +42,13 @@ private:
 
     RotaryEncoder encoder;
 
-    enum class Screen { WIFI_MENU, WIFI_SAVED, WIFI_NEW, WIFI_NEW_SSID, WIFI_NEW_PWD, WIFI_CONFIRM, HOME, EDIT_SETPOINT };
+    enum class Screen { WIFI_MENU, WIFI_SAVED, WIFI_NEW, WIFI_NEW_SSID, WIFI_NEW_PWD, WIFI_CONFIRM, SETPOINT_SELECT, SETPOINT_SAVED, HOME, EDIT_SETPOINT };
     Screen currentScreen{Screen::WIFI_MENU};
-    int wifiMenuSelection{0};  // 0 = Saved login, 1 = Enter new
+    int wifiMenuSelection{0};
+    int spMenuSelection{0};
 
-    int editValue{1000};       // setpoint being edited
-    int currentSetpoint{1000}; // last confirmed setpoint
+    int editValue{1000};
+    int currentSetpoint{1000};
 
     char currentChar{'A'};
     std::string wifiInfo;
@@ -54,7 +56,7 @@ private:
     wifi_config_t wifiConfigInfo{.ssid = " ", .pwd = " "};
     bool setWifiPwd{false};
 
-    sensorData latestData{};   // cached data received from displayQueue
+    sensorData latestData{};
 };
 
 #endif // UITASK_H

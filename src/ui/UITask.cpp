@@ -13,7 +13,7 @@
 #define ROT_B_PIN  11
 #define ROT_BUTTON_PIN 12
 
-// co2 level settings v
+// co2 level settings
 #define SETPOINT_STEP   10
 #define SETPOINT_MAX    1500
 #define SETPOINT_MIN    0
@@ -66,6 +66,8 @@ void UITask::run() {
         checkTimeOut();
         //printf("inside ui task\n");
 
+
+        // dear god...
         display->fill(0);
         if (currentScreen == Screen::WIFI_MENU) {
             drawWifiMenuScreen();
@@ -77,6 +79,10 @@ void UITask::run() {
             drawWifiNewPwdScreen();
         } else if (currentScreen == Screen::WIFI_CONFIRM){
              drawWifiConfirmScreen();
+        } else if (currentScreen == Screen::SETPOINT_SELECT) {
+            drawSetpointSelectScreen();
+        } else if (currentScreen == Screen::SETPOINT_SAVED) {
+            drawSetpointSavedScreen();
         } else if (currentScreen == Screen::HOME) {
             drawHomeScreen();
         } else {
@@ -97,6 +103,12 @@ void UITask::handleInput() {
         if (wifiMenuSelection > 1) wifiMenuSelection = 1;
     }
 
+    if (currentScreen == Screen::SETPOINT_SELECT && delta != 0) {
+        spMenuSelection += (delta > 0) ? 1 : -1;
+        if (spMenuSelection < 0) spMenuSelection = 0;
+        if (spMenuSelection > 1) spMenuSelection = 1;
+    }
+
     if (currentScreen == Screen::EDIT_SETPOINT && delta != 0) {
         editValue += delta * SETPOINT_STEP;
         if (editValue < SETPOINT_MIN) editValue = SETPOINT_MIN;
@@ -115,34 +127,36 @@ void UITask::handleInput() {
     if (encoder.wasButtonPressed()) {
 
         if (currentScreen == Screen::WIFI_MENU) {
-            //lastActive = xTaskGetTickCount();
             currentScreen = (wifiMenuSelection == 0) ? Screen::WIFI_SAVED : Screen::WIFI_NEW_SSID;
 
         } else if (currentScreen == Screen::WIFI_SAVED) {
-            currentScreen = Screen::HOME;
+            currentScreen = Screen::SETPOINT_SELECT;
 
         } else if (currentScreen == Screen::WIFI_NEW_SSID || currentScreen == Screen::WIFI_NEW_PWD){
-            //lastActive = xTaskGetTickCount();
             if (wifiInfo.length() <= WIFI_MAX_SIZE) wifiInfo.push_back(currentChar);
             else currentScreen = Screen::WIFI_CONFIRM;
-
 
         } else if (currentScreen == Screen::WIFI_CONFIRM) {
             if (!setWifiPwd) {
                 snprintf(wifiConfigInfo.ssid, sizeof(wifiConfigInfo.ssid), "%s", wifiInfo.c_str());
                 currentScreen = Screen::WIFI_NEW_PWD;
                 wifiInfo.clear();
-            }
-            else {
+            } else {
                 snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", wifiInfo.c_str());
                 //save eeprom
                 //send to queue
                 setWifiPwd = false;
-                currentScreen = Screen::EDIT_SETPOINT;
+                currentScreen = Screen::SETPOINT_SELECT;
                 wifiInfo.clear();
-                std::cout << "SAVED INFO: " << wifiConfigInfo.ssid << " " << wifiConfigInfo.pwd << std::endl;
+                std::cout << "Saved info: " << wifiConfigInfo.ssid << " " << wifiConfigInfo.pwd << std::endl;
             }
-            //lastActive = xTaskGetTickCount();
+
+        } else if (currentScreen == Screen::SETPOINT_SELECT) {
+            editValue = currentSetpoint;
+            currentScreen = (spMenuSelection == 0) ? Screen::SETPOINT_SAVED : Screen::EDIT_SETPOINT;
+
+        } else if (currentScreen == Screen::SETPOINT_SAVED) {
+            currentScreen = Screen::HOME;
 
         } else if (currentScreen == Screen::HOME) {
             editValue = currentSetpoint;
@@ -177,10 +191,8 @@ void UITask::checkTimeOut() {
         }
     }
 
-    else if (currentScreen == Screen::EDIT_SETPOINT) {
-        if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(CO2_SET_LEVEL_TIMEOUT)) { // timeout for CO2_SET_POINT
-            //save default to eeprom
-            //set default to queue and pass to controller
+    else if (currentScreen == Screen::EDIT_SETPOINT) { // we should probs have a timeout for the setpoints too
+        if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(CO2_SET_LEVEL_TIMEOUT)) { // using this for now
             currentScreen = Screen::HOME;
         }
     }
@@ -188,7 +200,7 @@ void UITask::checkTimeOut() {
 
 
 void UITask::drawHomeScreen() {
-    char buf[17];
+    char buf[20];
 
     display->text("- READINGS -", 14, 8);
 
@@ -232,12 +244,12 @@ void UITask::drawWifiSavedScreen() {
 }
 
 void UITask::drawWifiNewSSIDScreen() {
-    display->text("New SSID: ", 0, 8);
+    display->text("Enter SSID", 18, 8);
     displayWifiSetInfo();
 }
 
 void UITask::drawWifiNewPwdScreen() {
-    display->text("New password: ", 0, 8);
+    display->text("Enter password", 8, 8);
     displayWifiSetInfo();
 }
 
@@ -253,12 +265,25 @@ void UITask::displayWifiSetInfo() {
 }
 
 
+void UITask::drawSetpointSelectScreen() {
+    display->text("SET CO2 TARGET", 8, 8);
+    display->text((spMenuSelection == 0) ? "> Saved SP" : "  Saved SP", 0, 24);
+    display->text((spMenuSelection == 1) ? "> Enter new" : "  Enter new", 0, 40);
+}
+
+void UITask::drawSetpointSavedScreen() {
+    // PLACEHOLDER for getting setpoint from eeprom
+    display->text("SP from EEPROM", 0, 20);
+    display->text("Placeholder", 16, 32);
+    display->text("Press to cont.", 0, 50);
+}
+
 void UITask::drawWifiConfirmScreen() {
-    display->text("SAVING: ", 36, 10);
+    display->text("YOU ENTERED:", 8, 10);
     display->text(wifiInfo.c_str(), 0, 30 );
     if (wifiInfo.length() >= ROW_MAX_CHAR) {
         std::string subStr = wifiInfo.substr(ROW_MAX_CHAR);
         display->text(subStr.c_str(), 0, 40);
     }
-    display->text("Press to save", 0, 50);
+    display->text("Press to save", 4, 50);
 }
