@@ -12,10 +12,12 @@
 #include "ssd1306os.h"
 #include "controller/ControllerEnums.h"
 #include "RotaryEncoder.h"
+#include "ConfigStorage.h"
+#include "event_groups.h"
 
 class UITask {
 public:
-    UITask(QueueHandle_t displayQueue, QueueHandle_t controllerQueue);
+    UITask(QueueHandle_t displayQueue, QueueHandle_t controllerQueue, QueueHandle_t wifiQueue, EventGroupHandle_t eventGroup, std::shared_ptr<ConfigStorage> storage);
 
 private:
     static void runner(void *params);
@@ -32,11 +34,15 @@ private:
     void checkTimeOut();
 
     void displayWifiSetInfo();
+    void saveInfoToMemory();
 
     // display is created inside run() after the scheduler starts
     std::shared_ptr<ssd1306os> display;
+    std::shared_ptr<ConfigStorage> storage;
     QueueHandle_t displayQueue;
     QueueHandle_t controllerQueue;
+    QueueHandle_t wifiQueue;
+    EventGroupHandle_t eventGroup;
     TaskHandle_t handle;
 
     RotaryEncoder encoder;

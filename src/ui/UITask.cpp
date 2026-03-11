@@ -31,8 +31,8 @@
 #define ROW_MAX_CHAR 16
 #define WIFI_MAX_SIZE 60
 
-UITask::UITask(QueueHandle_t displayQueue, QueueHandle_t controllerQueue)
-    : displayQueue(displayQueue), controllerQueue(controllerQueue),
+UITask::UITask(QueueHandle_t displayQueue, QueueHandle_t controllerQueue, QueueHandle_t wifiQueue, EventGroupHandle_t eventGroup, std::shared_ptr<ConfigStorage> storage)
+    : storage(storage), displayQueue(displayQueue), controllerQueue(controllerQueue), wifiQueue(wifiQueue), eventGroup(eventGroup),
       encoder(ROT_A_PIN, ROT_B_PIN, ROT_BUTTON_PIN)
 {
     xTaskCreate(UITask::runner, "UI", 1024, this, tskIDLE_PRIORITY + 1, &handle);
@@ -51,12 +51,7 @@ void UITask::run() {
     display->show();
 
     while (true) {
-        // "drains" the queue keeping only the newest reading
         sensorData data;
-        /*while (xQueueReceive(displayQueue, &data, 0) == pdPASS) {
-            latestData = data;
-            printf("received data in ui: %f\n", latestData.co2);
-        }*/
 
         if (xQueueReceive(displayQueue, &data, 0) == pdPASS) {
             latestData = data;
@@ -83,6 +78,7 @@ void UITask::run() {
             drawSetpointScreen();
         }
         display->show();
+
 
         vTaskDelay(pdMS_TO_TICKS(200));
     }
@@ -115,14 +111,17 @@ void UITask::handleInput() {
     if (encoder.wasButtonPressed()) {
 
         if (currentScreen == Screen::WIFI_MENU) {
-            //lastActive = xTaskGetTickCount();
             currentScreen = (wifiMenuSelection == 0) ? Screen::WIFI_SAVED : Screen::WIFI_NEW_SSID;
 
         } else if (currentScreen == Screen::WIFI_SAVED) {
-            currentScreen = Screen::HOME;
+            wifiConfig info = storage->getWifiConfig();
+            snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", info.PASSWORD.c_str());
+            snprintf(wifiConfigInfo.ssid, sizeof(wifiConfigInfo.ssid), "%s", info.SSID.c_str());
+            if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
+            // wait eventBit from cloud to see if it connected...
+            currentScreen = Screen::EDIT_SETPOINT;
 
         } else if (currentScreen == Screen::WIFI_NEW_SSID || currentScreen == Screen::WIFI_NEW_PWD){
-            //lastActive = xTaskGetTickCount();
             if (wifiInfo.length() <= WIFI_MAX_SIZE) wifiInfo.push_back(currentChar);
             else currentScreen = Screen::WIFI_CONFIRM;
 
@@ -135,14 +134,14 @@ void UITask::handleInput() {
             }
             else {
                 snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", wifiInfo.c_str());
-                //save eeprom
-                //send to queue
+                if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
+                saveInfoToMemory();
                 setWifiPwd = false;
+                //wait for eventBit to see if connected...
                 currentScreen = Screen::EDIT_SETPOINT;
                 wifiInfo.clear();
                 std::cout << "SAVED INFO: " << wifiConfigInfo.ssid << " " << wifiConfigInfo.pwd << std::endl;
             }
-            //lastActive = xTaskGetTickCount();
 
         } else if (currentScreen == Screen::HOME) {
             editValue = currentSetpoint;
@@ -150,8 +149,9 @@ void UITask::handleInput() {
 
         } else {
             currentSetpoint = editValue; // this is for EDIT_SETPOINT
-            const auto sp = static_cast<float>(editValue);
-            xQueueSend(controllerQueue, &sp, 0);
+            //const auto sp = static_cast<float>(editValue);
+            xQueueSend(controllerQueue, &currentSetpoint, 0);
+            storage->setCo2Level(currentSetpoint);
             currentScreen = Screen::HOME;
         }
         lastActive = xTaskGetTickCount();
@@ -179,8 +179,9 @@ void UITask::checkTimeOut() {
 
     else if (currentScreen == Screen::EDIT_SETPOINT) {
         if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(CO2_SET_LEVEL_TIMEOUT)) { // timeout for CO2_SET_POINT
-            //save default to eeprom
-            //set default to queue and pass to controller
+            currentSetpoint = 1200;
+            storage->setCo2Level(currentSetpoint);
+            xQueueSend(controllerQueue, &currentSetpoint, 0);
             currentScreen = Screen::HOME;
         }
     }
@@ -192,16 +193,16 @@ void UITask::drawHomeScreen() {
 
     display->text("- READINGS -", 14, 8);
 
-    snprintf(buf, sizeof(buf), "CO2: %4.0f ppm", latestData.co2);
+    snprintf(buf, sizeof(buf), "CO2: %4.0f ppm", latestData.co2.value);
     display->text(buf, 0, 20);
 
     snprintf(buf, sizeof(buf), "SP:  %4d ppm", currentSetpoint);
     display->text(buf, 0, 30);
 
-    snprintf(buf, sizeof(buf), "Temp: %5.1f C", latestData.temp);
+    snprintf(buf, sizeof(buf), "Temp: %5.1f C", latestData.temp.value);
     display->text(buf, 0, 40);
 
-    snprintf(buf, sizeof(buf), "RH:    %4.1f %%", latestData.rh);
+    snprintf(buf, sizeof(buf), "RH:    %4.1f %%", latestData.rh.value);
     display->text(buf, 0, 50);
 }
 
@@ -226,8 +227,8 @@ void UITask::drawWifiMenuScreen() {
 
 void UITask::drawWifiSavedScreen() {
     // PLACEHOLDER!!! for getting wifi info from eeprom
-    display->text("Placeholder for", 0, 20);
-    display->text("saved", 0, 32);
+    display->text("Reading saved wifi", 0, 20);
+    display->text("config info...", 0, 32);
     display->text("Press to cont.", 0, 50);
 }
 
@@ -241,6 +242,16 @@ void UITask::drawWifiNewPwdScreen() {
     displayWifiSetInfo();
 }
 
+void UITask::drawWifiConfirmScreen() {
+    display->text("SAVING: ", 36, 10);
+    display->text(wifiInfo.c_str(), 0, 30 );
+    if (wifiInfo.length() >= ROW_MAX_CHAR) {
+        std::string subStr = wifiInfo.substr(ROW_MAX_CHAR);
+        display->text(subStr.c_str(), 0, 40);
+    }
+    display->text("Press to save", 0, 50);
+}
+
 void UITask::displayWifiSetInfo() {
     char buf[16];
     snprintf(buf, sizeof(buf), "-> %c <-", currentChar);
@@ -252,13 +263,14 @@ void UITask::displayWifiSetInfo() {
     }
 }
 
+void UITask::saveInfoToMemory() {
+     wifiConfig info {
+        .SSID = wifiConfigInfo.ssid,
+        .PASSWORD = wifiConfigInfo.pwd
+    };
 
-void UITask::drawWifiConfirmScreen() {
-    display->text("SAVING: ", 36, 10);
-    display->text(wifiInfo.c_str(), 0, 30 );
-    if (wifiInfo.length() >= ROW_MAX_CHAR) {
-        std::string subStr = wifiInfo.substr(ROW_MAX_CHAR);
-        display->text(subStr.c_str(), 0, 40);
-    }
-    display->text("Press to save", 0, 50);
+    storage->setWifiConfig(info);
+    printf("saved wifi info on EEPROM\n");
 }
+
+

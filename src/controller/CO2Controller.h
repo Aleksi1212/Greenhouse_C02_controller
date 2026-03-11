@@ -15,12 +15,13 @@
 #include "timers.h"
 #include "Fmutex.h"
 #include "ControllerEnums.h"
+#include "event_groups.h"
 
 
 class CO2Controller {
 public:
     CO2Controller(const std::array<std::shared_ptr<SensorInterface>, 3> &sensors, const std::array<std::shared_ptr<ActuatorsInterface>, 2> &actuators,
-        const std::shared_ptr<Fmutex> guard, QueueHandle_t controlQueue, QueueHandle_t displayQueue, QueueHandle_t cloudQueue, float co2Level = 1200, TickType_t measureInterval = 30000);
+        const std::shared_ptr<Fmutex> guard, QueueHandle_t controlQueue, QueueHandle_t displayQueue, QueueHandle_t cloudQueue, EventGroupHandle_t eventGroup, float co2Level = 1200, TickType_t measureInterval = 30000);
 
 private:
     static void runner(void *params);
@@ -34,6 +35,7 @@ private:
     QueueHandle_t displayQueue;
     QueueHandle_t cloudQueue;
     TimerHandle_t valveTimer;
+    EventGroupHandle_t eventGroup;
 
     std::shared_ptr<Fmutex> guard;
 
@@ -47,6 +49,7 @@ private:
     float co2{};
     float temp{};
     float rh{};
+    float fan{};
 
     bool sensorStartUp();
     void readSensors();

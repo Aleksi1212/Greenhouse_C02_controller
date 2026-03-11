@@ -13,18 +13,18 @@
 #define LED_2 21
 #define LED_3 22
 
-ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q)
-: http_server(DEFAULT_HTTP_SERVER), cloud_q(_cloud_q), controller_q(_controller_q)
+ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q, QueueHandle_t _wifi_q, EventGroupHandle_t eventGroup)
+: http_server(DEFAULT_HTTP_SERVER), cloud_q(_cloud_q), controller_q(_controller_q), wifi_q(_wifi_q), eventGroup(eventGroup)
 {
     ipstack_mtx = xSemaphoreCreateMutex();
 
-    xTaskCreate(ThingSpeak::connect_task, "CONNECT", 4096, 
+    xTaskCreate(ThingSpeak::connect_task, "CONNECT", 5120,
         static_cast<void*>(this),
         tskIDLE_PRIORITY + 2,
         &connect_task_handle
     );
 
-    xTaskCreate(ThingSpeak::send_task, "SEND", 4096, 
+    xTaskCreate(ThingSpeak::send_task, "SEND", 2048,
         static_cast<void *>(this), 
         tskIDLE_PRIORITY + 1, 
         &send_task_handle
@@ -53,12 +53,21 @@ void ThingSpeak::connect_task(void *param)
 {
     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
 
-    ts->ipstack = std::make_shared<IPStack>(SSID, PW);
+    wifi_config_t wifiInfo;
+    //printf("waiting for wifi info\n");
+    if (xQueueReceive(ts->wifi_q, &wifiInfo, portMAX_DELAY) == pdPASS) {
+        // SSID, PW
+        //printf("SSID: %s, PWD: %s\n", wifiInfo.ssid, wifiInfo.pwd);
+        ts->ipstack = std::make_shared<IPStack>(wifiInfo.ssid, wifiInfo.pwd);
+    }
+
+    if ((*ts->ipstack)()) xEventGroupSetBits(ts->eventGroup, EVENT_BIT_0);
+    else xEventGroupSetBits(ts->eventGroup, EVENT_BIT_1);
 
     ip_addr_t addr;
     int err = (int)dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr,
         ThingSpeak::dns_callback, param);
-        
+
     while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
 
     gpio_init(LED_1);
@@ -94,12 +103,12 @@ void ThingSpeak::send_task(void *param)
                 std::ostringstream http_body_ss;
                 http_body_ss << "api_key="
                     << THINGSPEAK_WRITE_API_KEY
-                    << "&field1="
-                    << data.co2
+                    << "&field1=" //field number data.co2.index
+                    << data.co2.value
                     << "&field2="
-                    << data.rh
+                    << data.rh.value
                     << "&field3="
-                    << data.temp;
+                    << data.temp.value;
                 auto http_body = http_body_ss.str();
     
                 snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
@@ -198,7 +207,7 @@ void ThingSpeak::read_task(void *param)
         if (rc == 0) {
             gpio_put(LED_3, true);
             
-            printf("Sending: %s\n", http_msg);
+            //printf("Sending: %s\n", http_msg);
             rc = ipstack->write((unsigned char*)http_msg, strlen(http_msg), 1000);
             if (rc > 0) {
                 auto rv = ipstack->read(result_buffer, RESULT_BUF_SIZE, 2000);
@@ -219,6 +228,6 @@ void ThingSpeak::read_task(void *param)
         gpio_put(LED_3, false);
 
         xSemaphoreGive(ts->ipstack_mtx);
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
