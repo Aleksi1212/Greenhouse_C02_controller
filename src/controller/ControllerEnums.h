@@ -22,4 +22,9 @@ struct sensorData {
     float rh{};
 };
 
+typedef struct wifiConfigInfo {
+    char ssid[64];
+    char pwd[64];
+} wifi_config_t;
+
 #endif //CONTROLLERENUMS_H
