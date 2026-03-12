@@ -30,8 +30,11 @@ private:
     void drawWifiNewSSIDScreen();
     void drawWifiNewPwdScreen();
     void drawWifiConfirmScreen();
+    void drawWifiConnecting();
+    void drawWifiConnectionError();
     void handleInput();
     void checkTimeOut();
+    void checkEventBits();
 
     void displayWifiSetInfo();
     void saveInfoToMemory();
@@ -47,7 +50,7 @@ private:
 
     RotaryEncoder encoder;
 
-    enum class Screen { WIFI_MENU, WIFI_SAVED, WIFI_NEW, WIFI_NEW_SSID, WIFI_NEW_PWD, WIFI_CONFIRM, HOME, EDIT_SETPOINT };
+    enum class Screen { WIFI_MENU, WIFI_SAVED, WIFI_ERROR, WIFI_CONNECTING, WIFI_NEW_SSID, WIFI_NEW_PWD, WIFI_CONFIRM, HOME, EDIT_SETPOINT };
     Screen currentScreen{Screen::WIFI_MENU};
     int wifiMenuSelection{0};  // 0 = Saved login, 1 = Enter new
 

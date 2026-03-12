@@ -24,7 +24,8 @@ enum cloudIndex {
     CO2_C = 1,
     TEMP_C,
     RH_C,
-    FAN_C
+    FAN_C,
+    CO2_SET_C
 };
 
 typedef struct data {
@@ -37,6 +38,7 @@ typedef struct sensorData_ {
     data_ temp{};
     data_ rh{};
     data_ fan{};
+    data_ co2Set{};
 } sensorData;
 
 typedef struct wifiConfigInfo {

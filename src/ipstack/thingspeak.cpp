@@ -61,8 +61,16 @@ void ThingSpeak::connect_task(void *param)
         ts->ipstack = std::make_shared<IPStack>(wifiInfo.ssid, wifiInfo.pwd);
     }
 
-    if ((*ts->ipstack)()) xEventGroupSetBits(ts->eventGroup, EVENT_BIT_0);
-    else xEventGroupSetBits(ts->eventGroup, EVENT_BIT_1);
+    if ((*ts->ipstack)()) {
+        xEventGroupSetBits(ts->eventGroup, EVENT_BIT_0);
+        printf("setting bit 0.\n");
+    }
+    else {
+        xEventGroupSetBits(ts->eventGroup, EVENT_BIT_1);
+        printf("setting bit 1.\n");
+        printf("SUSPENDING CLOUD TASK.\n");
+        vTaskSuspend(NULL);
+    }
 
     ip_addr_t addr;
     int err = (int)dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr,

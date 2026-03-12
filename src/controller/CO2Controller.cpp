@@ -32,7 +32,7 @@ void CO2Controller::valveTimerCallback(TimerHandle_t xTimer) {
 
 void CO2Controller::runner(void *params) {
     auto instance = static_cast<CO2Controller *>(params);
-     xEventGroupWaitBits(instance->eventGroup, EVENT_BIT_0, pdTRUE, pdTRUE, portMAX_DELAY);
+    instance->eventBits = xEventGroupWaitBits(instance->eventGroup, EVENT_BIT_0 | EVENT_BIT_2, pdFALSE, pdFALSE, portMAX_DELAY);
     instance->run();
 }
 
@@ -41,19 +41,19 @@ void CO2Controller::run() {
 
     int newCO2Level = 0;
 
-    if (!sensorStartUp()) printf("FAILED TO INITIALIZE SENSORS\n"); // suspend or reboot or something here
+    if (!sensorStartUp()) printf("FAILED TO INITIALIZE SENSORS. REBOOT!\n"); // suspend or reboot or something here
+    if (xQueueReceive(controllerQueue, &newCO2Level, portMAX_DELAY) == pdPASS) co2Level = static_cast<float>(newCO2Level);
 
     while (true) {
-
-        //printf("inside controller\n");
-        if (xQueueReceive(controllerQueue, &newCO2Level, measuringInterval) == pdPASS) {
-            co2Level = static_cast<float>(newCO2Level);
-            printf("CO2 level changed: %f\n ", co2Level);
-        }
 
         readSensors();
         controlFan();
         controlValve();
+
+        if (xQueueReceive(controllerQueue, &newCO2Level, measuringInterval) == pdPASS) {
+            co2Level = static_cast<float>(newCO2Level);
+            printf("CO2 level changed: %f\n ", co2Level);
+        }
     }
 }
 
@@ -71,7 +71,6 @@ void CO2Controller::controlValve() {
         }
     }
 }
-
 
 void CO2Controller::controlFan() {
     std::lock_guard<Fmutex> lock(*guard); // lock modbus read and write
@@ -91,7 +90,6 @@ void CO2Controller::controlFan() {
     }
 }
 
-
 void CO2Controller::readSensors() {
     std::lock_guard<Fmutex> lock(*guard); // lock modbus read
 
@@ -107,15 +105,16 @@ void CO2Controller::readSensors() {
         .co2 = {CO2_C, co2},
         .temp = {TEMP_C, temp},
         .rh = {RH_C, rh},
-        .fan = {FAN_C, fan}
+        .fan = {FAN_C, fan},
+        .co2Set = {CO2_SET_C, co2Level}
     };
 
     // if data is not accurate we don't send it forward
     if (co2 == 0.0 || temp == 0.0 || rh == 0.0) {
         printf("data not accurate\n");
     } else {
+        if ((eventBits & EVENT_BIT_0) != 0) xQueueSend(cloudQueue, &data, 0); // if we have connection send to cloud task
         xQueueSend(displayQueue, &data, 0);
-        xQueueSend(cloudQueue, &data, 0);
     }
     ++measurementCount;
 
@@ -124,7 +123,10 @@ void CO2Controller::readSensors() {
 bool CO2Controller::sensorStartUp() {
     TickType_t start = xTaskGetTickCount();
     printf("CO2 Sensor warming up\n");
-    vTaskDelay(CO2_WARM_UP_TIME); // warm up time 12 seconds according to data sheet
+
+    if (start < CO2_WARM_UP_TIME) {         // co2 sensor warm up time 12 seconds
+        vTaskDelay(CO2_WARM_UP_TIME - start);
+    }
 
     do {
         std::lock_guard<Fmutex> lock(*guard); // lock modbus reads

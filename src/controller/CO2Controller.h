@@ -41,9 +41,8 @@ private:
 
     float co2Level; // this can be changed through UI or remotely
     TickType_t measuringInterval;
+    EventBits_t eventBits{};
 
-    //TickType_t lastValveOpenTime{};
-    //bool valveCanOpen{};
     int measurementCount{};
 
     float co2{};

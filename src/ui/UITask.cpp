@@ -22,6 +22,7 @@
 #define SSID_WIFI_TIMEOUT 5000
 #define CONFIRM_TIMEOUT 5000
 #define CO2_SET_LEVEL_TIMEOUT 10000
+#define WIFI_ERROR_TIMEOUT 5000
 
 // ascii table min max values
 #define ASCII_MIN 33
@@ -71,15 +72,17 @@ void UITask::run() {
         } else if (currentScreen == Screen::WIFI_NEW_PWD) {
             drawWifiNewPwdScreen();
         } else if (currentScreen == Screen::WIFI_CONFIRM){
-             drawWifiConfirmScreen();
+            drawWifiConfirmScreen();
+        } else if (currentScreen == Screen::WIFI_CONNECTING) {
+            drawWifiConnecting();
+        } else if (currentScreen == Screen::WIFI_ERROR) {
+            drawWifiConnectionError();
         } else if (currentScreen == Screen::HOME) {
             drawHomeScreen();
         } else {
             drawSetpointScreen();
         }
         display->show();
-
-
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
@@ -119,7 +122,7 @@ void UITask::handleInput() {
             snprintf(wifiConfigInfo.ssid, sizeof(wifiConfigInfo.ssid), "%s", info.SSID.c_str());
             if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
             // wait eventBit from cloud to see if it connected...
-            currentScreen = Screen::EDIT_SETPOINT;
+            currentScreen = Screen::WIFI_CONNECTING;
 
         } else if (currentScreen == Screen::WIFI_NEW_SSID || currentScreen == Screen::WIFI_NEW_PWD){
             if (wifiInfo.length() <= WIFI_MAX_SIZE) wifiInfo.push_back(currentChar);
@@ -135,19 +138,19 @@ void UITask::handleInput() {
             else {
                 snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", wifiInfo.c_str());
                 if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
-                saveInfoToMemory();
                 setWifiPwd = false;
-                //wait for eventBit to see if connected...
-                currentScreen = Screen::EDIT_SETPOINT;
-                wifiInfo.clear();
-                std::cout << "SAVED INFO: " << wifiConfigInfo.ssid << " " << wifiConfigInfo.pwd << std::endl;
+                currentScreen = Screen::WIFI_CONNECTING;
             }
+
+        } else if (currentScreen == Screen::WIFI_ERROR) {
+            xEventGroupSetBits(eventGroup, EVENT_BIT_2);
+            currentScreen = Screen::EDIT_SETPOINT;
 
         } else if (currentScreen == Screen::HOME) {
             editValue = currentSetpoint;
             currentScreen = Screen::EDIT_SETPOINT;
 
-        } else {
+        } else if (currentScreen == Screen::EDIT_SETPOINT){
             currentSetpoint = editValue; // this is for EDIT_SETPOINT
             //const auto sp = static_cast<float>(editValue);
             xQueueSend(controllerQueue, &currentSetpoint, 0);
@@ -185,6 +188,12 @@ void UITask::checkTimeOut() {
             currentScreen = Screen::HOME;
         }
     }
+
+    /*else if (currentScreen == Screen::WIFI_ERROR) {
+        if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(WIFI_ERROR_TIMEOUT)) {
+            currentScreen = Screen::HOME;
+        }
+    }*/
 }
 
 
@@ -227,8 +236,8 @@ void UITask::drawWifiMenuScreen() {
 
 void UITask::drawWifiSavedScreen() {
     // PLACEHOLDER!!! for getting wifi info from eeprom
-    display->text("Reading saved wifi", 0, 20);
-    display->text("config info...", 0, 32);
+    display->text("CHECKING EEPROM", 0, 20);
+    //display->text("config info...", 0, 32);
     display->text("Press to cont.", 0, 50);
 }
 
@@ -252,6 +261,22 @@ void UITask::drawWifiConfirmScreen() {
     display->text("Press to save", 0, 50);
 }
 
+void UITask::drawWifiConnectionError() {
+    std::string msg = "FAILED TO CONNECT! Press to continue without connection or restart to try again.";
+    int row = 10;
+    for (int i = 0; i < msg.length(); i += ROW_MAX_CHAR) {
+        std::string subStr = msg.substr(i, ROW_MAX_CHAR);
+        display->text(subStr.c_str(), 0, row);
+        row += 10;
+    }
+}
+
+void UITask::drawWifiConnecting() {
+    display->text("Connecting...", 10, 25);
+    checkEventBits();
+}
+
+
 void UITask::displayWifiSetInfo() {
     char buf[16];
     snprintf(buf, sizeof(buf), "-> %c <-", currentChar);
@@ -272,5 +297,22 @@ void UITask::saveInfoToMemory() {
     storage->setWifiConfig(info);
     printf("saved wifi info on EEPROM\n");
 }
+
+void UITask::checkEventBits() {
+    EventBits_t setBits = xEventGroupGetBits(eventGroup);
+    //printf("event bits: %lu\n", setBits);
+    if ((setBits & EVENT_BIT_1) != 0) {
+        printf("connection failed.");
+        currentScreen = Screen::WIFI_ERROR;
+    }
+    else if ((setBits & EVENT_BIT_0) != 0) {
+        saveInfoToMemory();
+        currentScreen = Screen::EDIT_SETPOINT;
+        lastActive = xTaskGetTickCount();
+        wifiInfo.clear();
+        std::cout << "SAVED INFO: " << wifiConfigInfo.ssid << " " << wifiConfigInfo.pwd << std::endl;
+    }
+}
+
 
 
