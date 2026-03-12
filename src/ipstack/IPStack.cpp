@@ -41,7 +41,6 @@ IPStack::IPStack(const char *ssid, const char *pw, const uint8_t *tls_cert, size
         }
 
     }
-
 }
 
 bool IPStack::operator()() { return wifi_connected; }

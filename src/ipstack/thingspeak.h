@@ -13,6 +13,7 @@
 // #include "cert.h"
 
 #define JSMN_STATIC
+#include "event_groups.h"
 #include "jsmn.h"
 // struct CloudData_t {
 //     float co2_level;
@@ -112,12 +113,15 @@ private:
 
     QueueHandle_t cloud_q;
     QueueHandle_t controller_q;
+    QueueHandle_t wifi_q;
 
     TaskHandle_t connect_task_handle;
     TaskHandle_t send_task_handle;
     TaskHandle_t read_task_handle;
 
     SemaphoreHandle_t ipstack_mtx;
+
+    EventGroupHandle_t eventGroup;
 
     std::string http_server;
     bool dns_ready = false;
@@ -132,7 +136,7 @@ private:
 
     bool parse_talkback_response_json(const char *response, int *co2_set_point);
 public:
-    ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q);
+    ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q, QueueHandle_t _wifi_q, EventGroupHandle_t eventGroup);
 };
 
 

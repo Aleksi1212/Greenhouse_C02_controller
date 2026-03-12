@@ -17,6 +17,8 @@ ConfigStorage::ConfigStorage(std::shared_ptr<Eeprom> eeprom) : eeprom(eeprom) {
 
 bool ConfigStorage::setCo2Level(uint16_t level) {
 
+    printf("co2 level inside eeprom: %d", level);
+
     std::vector<uint8_t> buffer;
     buffer.push_back((level >> 8) & 0xFF);
     buffer.push_back(level & 0xFF);
@@ -28,7 +30,7 @@ bool ConfigStorage::setCo2Level(uint16_t level) {
     return eeprom->writeBytes(CO2_ADDR, buffer);
 }
 
-uint16_t ConfigStorage::getCo2Level() {
+int ConfigStorage::getCo2Level() {
 
     std::vector<uint8_t> buffer(4); // uint16_t set level value + 2 crc bytes
 

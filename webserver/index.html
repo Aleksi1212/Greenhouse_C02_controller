@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YURRRITTO CO2 Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h2>Greenhouse CO2 Controller</h2>
+        <p>Set the target CO2 level</p>
+        
+        <input type="number" id="Input" placeholder="Enter PPM Value(0-1500)" min="0" max="1500" step="100">
+        <br>
+        <button onclick="useText()">Update Controller</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function useText() {
+            const text = document.getElementById("Input").value;
+            const resultDiv = document.getElementById("result");
+
+            if(!text) {
+                alert("Please enter a CO2 value!");
+                return;
+            }
+            if(text < 0 || text > 1500) {
+                alert("Please enter a value between 0 and 1500 PPM!");
+                return;
+            }
+
+            resultDiv.innerHTML = "Sending to ThingSpeak...";
+            resultDiv.className = "";
+
+            fetch("/sendCommand", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ command: text })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.id) {
+                    resultDiv.innerHTML = "Command Sent | ID: " + data.id;
+                    resultDiv.className = "success";
+                    document.getElementById("Input").value = "";
+                } else {
+                    resultDiv.innerHTML = "Failed to send command.";
+                    resultDiv.className = "error";
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                resultDiv.innerHTML = "Connection Error!";
+                resultDiv.className = "error";
+            });
+        }
+    </script>
+</body>
+</html>
