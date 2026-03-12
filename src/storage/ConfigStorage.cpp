@@ -6,7 +6,7 @@
 #include <vector>
 
 // use setCO2Level for storing co2level on eeprom and get for getting the previous value
-// wifi config info is saved and retrieved using wifiConfig struct -> we need to typecast these c strings before passsing into a queue
+// wifi config info is saved and retrieved using wifiConfig struct -> we need to typecast these c strings before passing into a queue
 // each value read is validated with checksum calculation
 
 // if reading co2level fails error value sent is 0XFFFF

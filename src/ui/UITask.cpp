@@ -155,6 +155,7 @@ void UITask::handleInput() {
 
         } else if (currentScreen == Screen::SETPOINT_SAVED) {
             int level = storage->getCo2Level();
+            if (level == 0xFFFF) level = 1200; // if eeprom read fails then we set the default co2 level.
             if (xQueueSendToBack(controllerQueue, &level, 0) == pdPASS) printf("SETPOINT SENT TO CONTROLLER");
             currentScreen = Screen::HOME;
         }
@@ -349,6 +350,7 @@ void UITask::getInfoFromMemory() {
     snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", info.PASSWORD.c_str());
     snprintf(wifiConfigInfo.ssid, sizeof(wifiConfigInfo.ssid), "%s", info.SSID.c_str());
     if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
+
 }
 
 
@@ -356,6 +358,7 @@ void UITask::checkLastConfigInfo() {
     getInfoFromMemory();
     checkEventBits();
     int level = storage->getCo2Level();
+    if (level == 0xFFFF) level = 1200; // if eeprom read fails then we set the default co2 level.
     if (xQueueSendToBack(controllerQueue, &level, 0) == pdPASS) printf("SETPOINT SENT TO CONTROLLER");
     currentScreen = Screen::HOME;
 }
