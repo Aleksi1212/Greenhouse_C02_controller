@@ -79,6 +79,10 @@ void UITask::run() {
             drawWifiConnectionError();
         } else if (currentScreen == Screen::HOME) {
             drawHomeScreen();
+        } else if (currentScreen == Screen::SETPOINT_SELECT) {
+            drawSetpointSelectScreen();
+        } else if (currentScreen == Screen::SETPOINT_SAVED) {
+            drawSetpointSavedScreen();
         } else {
             drawSetpointScreen();
         }
@@ -94,6 +98,12 @@ void UITask::handleInput() {
         wifiMenuSelection += (delta > 0) ? 1 : -1;
         if (wifiMenuSelection < 0) wifiMenuSelection = 0;
         if (wifiMenuSelection > 1) wifiMenuSelection = 1;
+    }
+
+    if (currentScreen == Screen::SETPOINT_SELECT && delta != 0) {
+        spMenuSelection += (delta > 0) ? 1 : -1;
+        if (spMenuSelection < 0) spMenuSelection = 0;
+        if (spMenuSelection > 1) spMenuSelection = 1;
     }
 
     if (currentScreen == Screen::EDIT_SETPOINT && delta != 0) {
@@ -142,9 +152,20 @@ void UITask::handleInput() {
                 currentScreen = Screen::WIFI_CONNECTING;
             }
 
-        } else if (currentScreen == Screen::WIFI_ERROR) {
+        } else if (currentScreen == Screen::SETPOINT_SELECT) {
+            editValue = currentSetpoint;
+            currentScreen = (spMenuSelection == 0) ? Screen::SETPOINT_SAVED : Screen::EDIT_SETPOINT;
+
+        } else if (currentScreen == Screen::SETPOINT_SAVED) {
+            int level = storage->getCo2Level();
+            printf("co2 level from eeprom: %d\n", level);
+            if (xQueueSendToBack(controllerQueue, &level, 0) == pdPASS) printf("SETPOINT SENT TO CONTROLLER");
+            currentScreen = Screen::HOME;
+        }
+
+        else if (currentScreen == Screen::WIFI_ERROR) {
             xEventGroupSetBits(eventGroup, EVENT_BIT_2);
-            currentScreen = Screen::EDIT_SETPOINT;
+            currentScreen = Screen::SETPOINT_SELECT;
 
         } else if (currentScreen == Screen::HOME) {
             editValue = currentSetpoint;
@@ -205,7 +226,7 @@ void UITask::drawHomeScreen() {
     snprintf(buf, sizeof(buf), "CO2: %4.0f ppm", latestData.co2.value);
     display->text(buf, 0, 20);
 
-    snprintf(buf, sizeof(buf), "SP:  %4d ppm", currentSetpoint);
+    snprintf(buf, sizeof(buf), "SP:  %4.0f ppm", latestData.co2Set.value);
     display->text(buf, 0, 30);
 
     snprintf(buf, sizeof(buf), "Temp: %5.1f C", latestData.temp.value);
@@ -276,6 +297,18 @@ void UITask::drawWifiConnecting() {
     checkEventBits();
 }
 
+void UITask::drawSetpointSavedScreen() {
+    // PLACEHOLDER!!! for getting wifi info from eeprom
+    display->text("CHECKING EEPROM", 0, 20);
+    //display->text("config info...", 0, 32);
+    display->text("Press to cont.", 0, 50);
+}
+
+void UITask::drawSetpointSelectScreen() {
+    display->text("SET CO2 TARGET", 8, 8);
+    display->text((spMenuSelection == 0) ? "> Saved SP" : "  Saved SP", 0, 24);
+    display->text((spMenuSelection == 1) ? "> Enter new"   : "  Enter new",   0, 40);
+}
 
 void UITask::displayWifiSetInfo() {
     char buf[16];
@@ -307,7 +340,7 @@ void UITask::checkEventBits() {
     }
     else if ((setBits & EVENT_BIT_0) != 0) {
         saveInfoToMemory();
-        currentScreen = Screen::EDIT_SETPOINT;
+        currentScreen = Screen::SETPOINT_SELECT;
         lastActive = xTaskGetTickCount();
         wifiInfo.clear();
         std::cout << "SAVED INFO: " << wifiConfigInfo.ssid << " " << wifiConfigInfo.pwd << std::endl;

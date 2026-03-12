@@ -39,8 +39,8 @@ private:
 
     std::shared_ptr<Fmutex> guard;
 
-    float co2Level; // this can be changed through UI or remotely
-    TickType_t measuringInterval;
+    float co2Level{}; // this can be changed through UI or remotely
+    TickType_t measuringInterval{};
     EventBits_t eventBits{};
 
     int measurementCount{};

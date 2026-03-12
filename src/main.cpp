@@ -41,22 +41,6 @@ extern "C" {
 #define STOP_BITS 2 // for real system (pico simualtor also requires 2 stop bits)
 
 
-/*void dummy_task(void *params) {
-
-    auto controllerQueue = static_cast<QueueHandle_t>(params);
-
-    sensorData data;
-
-    while (true) {
-        if (xQueueReceive(controllerQueue, &data, portMAX_DELAY) == pdPASS) {
-            printf("CO2: %.1f\n", data.co2);
-            printf("TEMP: %.1f\n", data.temp);
-            printf("RH: %.1f\n", data.rh);
-        }
-    }
-}*/
-
-
 int main() {
 
     stdio_init_all();

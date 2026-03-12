@@ -103,7 +103,7 @@ void ThingSpeak::send_task(void *param)
     unsigned char *buffer = new unsigned char[RESULT_BUF_SIZE];
 
     while (true) {
-        if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))) {
+        if (xQueueReceive(ts->cloud_q, &data, /*pdMS_TO_TICKS(5000)*/ portMAX_DELAY)) {
             xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
             int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
             if (rc == 0) {
@@ -236,6 +236,6 @@ void ThingSpeak::read_task(void *param)
         gpio_put(LED_3, false);
 
         xSemaphoreGive(ts->ipstack_mtx);
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(20000));
     }
 }

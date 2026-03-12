@@ -43,6 +43,7 @@ void CO2Controller::run() {
 
     if (!sensorStartUp()) printf("FAILED TO INITIALIZE SENSORS. REBOOT!\n"); // suspend or reboot or something here
     if (xQueueReceive(controllerQueue, &newCO2Level, portMAX_DELAY) == pdPASS) co2Level = static_cast<float>(newCO2Level);
+    printf("in the beginning co2 level: %f\n", co2Level);
 
     while (true) {
 
@@ -100,6 +101,7 @@ void CO2Controller::readSensors() {
     rh = sensors[RH]->readValue();
     //printf("RH: %.1f\n", rh);
 
+    printf("set level: %f\n", co2Level);
     // sensorData struct is passed to queues if data is accurate
     sensorData data = {
         .co2 = {CO2_C, co2},
@@ -108,6 +110,8 @@ void CO2Controller::readSensors() {
         .fan = {FAN_C, fan},
         .co2Set = {CO2_SET_C, co2Level}
     };
+
+    printf("inside controller. co2 level: %f\n", data.co2Set.value);
 
     // if data is not accurate we don't send it forward
     if (co2 == 0.0 || temp == 0.0 || rh == 0.0) {
