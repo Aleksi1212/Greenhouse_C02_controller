@@ -3,6 +3,8 @@
 //
 #include <cstring>
 #include "pico/time.h"
+#include "lwip/dns.h"
+
 
 #include "IPStack.h"
 
@@ -13,7 +15,7 @@
 #define DUMP_BYTES(A, B) {}
 
 
-IPStack::IPStack(const char *ssid, const char *pw) : tcp_pcb{nullptr}, dropped{0}, count{0}, wr{0}, rd{0}, connected{false}, wifi_connected{false} {
+IPStack::IPStack(const char *ssid, const char *pw, const uint8_t *tls_cert, size_t tls_cert_len) : tcp_pcb{nullptr}, dropped{0}, count{0}, wr{0}, rd{0}, connected{false}, wifi_connected{false} {
     if (cyw43_arch_init()) {
         wifi_connected = false;
         DEBUG_printf("failed to initialise\n");
@@ -28,6 +30,16 @@ IPStack::IPStack(const char *ssid, const char *pw) : tcp_pcb{nullptr}, dropped{0
     } else {
         wifi_connected = true;
         DEBUG_printf("Connected.\n");
+
+        DEBUG_printf("Setting tls.\n");
+        tls_config = altcp_tls_create_config_client(tls_cert, tls_cert_len);
+        if (tls_config != NULL) {
+            mbedtls_ssl_conf_authmode((mbedtls_ssl_config*)tls_config, MBEDTLS_SSL_VERIFY_REQUIRED);
+            DEBUG_printf("TLS success!!!\n");
+        } else {
+            DEBUG_printf("TLS fail :(\n");
+        }
+
     }
 
 }
@@ -38,35 +50,71 @@ int IPStack::connect(uint32_t hostname, int port) {
     return ERR_ARG;
 }
 
-int IPStack::connect(const char *hostname, int port) {
-    // check if the hostname requires DNS resolution
-    if (!ip4addr_aton(hostname, &remote_addr)) {
-        // dns not implemented yet
-        return ERR_ARG;
+void IPStack::dns_callback(const char *name, const ip_addr_t *ipaddr, void *arg)
+{
+    IPStack *ipstack = static_cast<IPStack*>(arg);
+    if (ipaddr) {
+        ipstack->http_server = ipaddr_ntoa(ipaddr);
+        printf("DNS resolved %s to %s\n", name, ipaddr_ntoa(ipaddr));
+    } else {
+        ipstack->http_server = DEFAULT_HTTP_SERVER;
+        printf("DNS resolution failed for %s\n", name);
     }
-    // open a socket connection
-    DEBUG_printf("Connecting to %s port %u\n", ip4addr_ntoa(&remote_addr), port);
-    tcp_pcb = tcp_new_ip_type(IP_GET_TYPE(remote_addr));
+    ipstack->dns_ready = true;
+}
+int IPStack::connect(const char *hostname, int port) {
+    ip_addr_t addr;
+    
+    dns_ready = false;
+    connected = false;
+
+    int dns_err = (int)dns_gethostbyname(hostname, &addr, IPStack::dns_callback, static_cast<void*>(this));
+    if (dns_err == ERR_OK) {
+        dns_ready = true;
+    } else if (dns_err == ERR_INPROGRESS) {
+        while (!dns_ready) vTaskDelay(pdMS_TO_TICKS(50));
+    } else {
+        return dns_err;
+    }
+    
+    DEBUG_printf("Connecting to %s port %u\n", ip4addr_ntoa(&addr), port);
+    
+    tcp_pcb = altcp_tls_new(tls_config, IPADDR_TYPE_ANY);
     if (!tcp_pcb) {
         DEBUG_printf("failed to create pcb\n");
         return ERR_MEM;
     }
+    
+    altcp_arg(tcp_pcb, this);
+    altcp_poll(tcp_pcb, IPStack::tcp_client_poll, POLL_TIME_S * 2);
+    altcp_sent(tcp_pcb, IPStack::tcp_client_sent);
+    altcp_recv(tcp_pcb, IPStack::tcp_client_recv);
+    altcp_err(tcp_pcb, IPStack::tcp_client_err);
 
-    tcp_arg(tcp_pcb, this);
-    tcp_poll(tcp_pcb, IPStack::tcp_client_poll, POLL_TIME_S * 2);
-    tcp_sent(tcp_pcb, IPStack::tcp_client_sent);
-    tcp_recv(tcp_pcb, IPStack::tcp_client_recv);
-    tcp_err(tcp_pcb, IPStack::tcp_client_err);
+    mbedtls_ssl_set_hostname((mbedtls_ssl_context*)altcp_tls_context(tcp_pcb), hostname);
 
-    // cyw43_arch_lwip_begin/end should be used around calls into lwIP to ensure correct locking.
-    // You can omit them if you are in a callback from lwIP. Note that when using pico_cyw_arch_poll
-    // these calls are a no-op and can be omitted, but it is a good practice to use them in
-    // case you switch the cyw43_arch type later.
     cyw43_arch_lwip_begin();
-    err_t err = tcp_connect(tcp_pcb, &remote_addr, port, IPStack::tcp_client_connected);
+    err_t err = altcp_connect(tcp_pcb, &addr, port, IPStack::tcp_client_connected);
     cyw43_arch_lwip_end();
 
-    return err;
+    if (err != ERR_OK) {
+        DEBUG_printf("altcp_connect failed: %d\n", err);
+        disconnect();
+        return err;
+    }
+
+    auto start = get_absolute_time();
+    while (!connected && absolute_time_diff_us(start, get_absolute_time()) < 5000000) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (!connected) {
+        DEBUG_printf("TLS Connection Timed Out\n");
+        disconnect(); 
+        return ERR_TIMEOUT;
+    }
+
+    return ERR_OK;
 }
 
 /** Function prototype for tcp sent callback functions. Called when sent data has
@@ -80,7 +128,7 @@ int IPStack::connect(const char *hostname, int port) {
  *            Only return ERR_ABRT if you have called tcp_abort from within the
  *            callback function!
  */
-err_t IPStack::tcp_client_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
+err_t IPStack::tcp_client_sent(void *arg, struct altcp_pcb *tpcb, u16_t len) {
     //auto state = static_cast<IPStack *>(arg);
     DEBUG_printf("tcp_client_sent %u\n", len);
 
@@ -99,10 +147,11 @@ err_t IPStack::tcp_client_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
  *
  * @note When a connection attempt fails, the error callback is currently called!
  */
-err_t IPStack::tcp_client_connected(void *arg, struct tcp_pcb *tpcb, err_t err) {
+err_t IPStack::tcp_client_connected(void *arg, struct altcp_pcb *tpcb, err_t err) {
     auto state = static_cast<IPStack *>(arg);
     if (err != ERR_OK) {
         printf("connect failed %d\n", err);
+        return state->disconnect();
     }
     state->connected = true;
 
@@ -118,9 +167,9 @@ err_t IPStack::tcp_client_connected(void *arg, struct tcp_pcb *tpcb, err_t err) 
  *            Only return ERR_ABRT if you have called tcp_abort from within the
  *            callback function!
  */
-err_t IPStack::tcp_client_poll(void *arg, struct tcp_pcb *tpcb) {
+err_t IPStack::tcp_client_poll(void *arg, struct altcp_pcb *tpcb) {
     //auto state = static_cast<IPStack *>(arg);
-    DEBUG_printf("tcp_client_poll\n");
+    DEBUG_printf("tls_tcp_client_poll\n");
     return ERR_OK;
 }
 
@@ -152,7 +201,7 @@ void IPStack::tcp_client_err(void *arg, err_t err) {
  *            Only return ERR_ABRT if you have called tcp_abort from within the
  *            callback function!
  */
-err_t IPStack::tcp_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
+err_t IPStack::tcp_client_recv(void *arg, struct altcp_pcb *tpcb, struct pbuf *p, err_t err) {
     auto state = static_cast<IPStack *>(arg);
     if (!p) {
         // connection has been closed - do we need to react to this somehow?
@@ -194,7 +243,7 @@ err_t IPStack::tcp_client_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, 
         state->wr %= BUF_SIZE; // wrap over
         state->count += bytes_to_copy; // increment count by the rest of the copied bytes
 
-        tcp_recved(tpcb, p->tot_len);
+        altcp_recved(tpcb, p->tot_len);
     }
     pbuf_free(p); // can we omit this call instead of dropping bytes to save the buffer for copying the rest later?
 
@@ -243,14 +292,14 @@ int IPStack::write(unsigned char *buffer, int len, int timeout) {
     // case you switch the cyw43_arch type later.
     cyw43_arch_lwip_begin();
 
-    err_t err = tcp_write(tcp_pcb, buffer, len, TCP_WRITE_FLAG_COPY);
+    err_t err = altcp_write(tcp_pcb, buffer, len, TCP_WRITE_FLAG_COPY);
     if (err != ERR_OK) {
         DEBUG_printf("Failed to write data %d\n", err);
         rv = -1;
     }
     // headers suggest that this should be called to make sure that data is sent right away
     // however there is TCB_WRITE_FLAG_MORE that possibly indicates the same thing??
-    if (tcp_output(tcp_pcb) != ERR_OK) {
+    if (altcp_output(tcp_pcb) != ERR_OK) {
         // failed! What should I do now?
         rv = -2;
     }
@@ -265,21 +314,20 @@ int IPStack::disconnect() {
 
     err_t err = ERR_OK;
     if (tcp_pcb != nullptr) {
-        tcp_arg(tcp_pcb, NULL);
-        tcp_poll(tcp_pcb, NULL, 0);
-        tcp_sent(tcp_pcb, NULL);
-        tcp_recv(tcp_pcb, NULL);
-        tcp_err(tcp_pcb, NULL);
-        err = tcp_close(tcp_pcb);
+        altcp_arg(tcp_pcb, NULL);
+        altcp_poll(tcp_pcb, NULL, 0);
+        altcp_sent(tcp_pcb, NULL);
+        altcp_recv(tcp_pcb, NULL);
+        altcp_err(tcp_pcb, NULL);
+        err = altcp_close(tcp_pcb);
         if (err != ERR_OK) {
             DEBUG_printf("close failed %d, calling abort\n", err);
-            tcp_abort(tcp_pcb); // this deallocates tcp_pcb
+            altcp_abort(tcp_pcb); // this deallocates tcp_pcb
             err = ERR_ABRT;
         }
         tcp_pcb = nullptr;
+        connected = false;
     }
     cyw43_arch_lwip_end();
     return err;
 }
-
-

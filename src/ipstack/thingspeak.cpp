@@ -7,7 +7,6 @@
 #include <string.h>
 #include "controller/ControllerEnums.h"
 #include "hardware/gpio.h"
-#include <iostream>
 
 #define LED_1 20
 #define LED_2 21
@@ -52,14 +51,9 @@ void ThingSpeak::dns_callback(const char *name, const ip_addr_t *ipaddr, void *c
 void ThingSpeak::connect_task(void *param)
 {
     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
-
-    ts->ipstack = std::make_shared<IPStack>(SSID, PW);
-
-    ip_addr_t addr;
-    int err = (int)dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr,
-        ThingSpeak::dns_callback, param);
-        
-    while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
+    
+    const uint8_t tls_cert[] = THINGSPEAK_CERT;
+    ts->ipstack = std::make_shared<IPStack>(SSID, PW, tls_cert, sizeof(tls_cert));
 
     gpio_init(LED_1);
     gpio_set_dir(LED_1, GPIO_OUT);
@@ -88,7 +82,7 @@ void ThingSpeak::send_task(void *param)
     while (true) {
         if (xQueueReceive(ts->cloud_q, &data, pdMS_TO_TICKS(5000))) {
             xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
-            int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+            int rc = ipstack->connect(HTTP_SERVER_HOSTNAME, HTTP_PORT);
             if (rc == 0) {
                 gpio_put(LED_2, true);
                 std::ostringstream http_body_ss;
@@ -194,7 +188,7 @@ void ThingSpeak::read_task(void *param)
 
     while (true) {
         xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
-        int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+        int rc = ipstack->connect(HTTP_SERVER_HOSTNAME, HTTP_PORT);
         if (rc == 0) {
             gpio_put(LED_3, true);
             
