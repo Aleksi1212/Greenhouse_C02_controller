@@ -13,11 +13,11 @@
 #define LED_3 22
 
 ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q, QueueHandle_t _wifi_q, EventGroupHandle_t eventGroup)
-: http_server(DEFAULT_HTTP_SERVER), cloud_q(_cloud_q), controller_q(_controller_q), wifi_q(_wifi_q), eventGroup(eventGroup)
+: cloud_q(_cloud_q), controller_q(_controller_q), wifi_q(_wifi_q), eventGroup(eventGroup)
 {
     ipstack_mtx = xSemaphoreCreateMutex();
 
-    xTaskCreate(ThingSpeak::connect_task, "CONNECT", 5120,
+    xTaskCreate(ThingSpeak::connect_task, "CONNECT", 4096,
         static_cast<void*>(this),
         tskIDLE_PRIORITY + 2,
         &connect_task_handle
@@ -33,19 +33,6 @@ ThingSpeak::ThingSpeak(QueueHandle_t _cloud_q, QueueHandle_t _controller_q, Queu
         tskIDLE_PRIORITY + 1, 
         &read_task_handle
     );
-}
-
-void ThingSpeak::dns_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
-{
-    ThingSpeak *ts = static_cast<ThingSpeak*>(callback_arg);
-    if (ipaddr) {
-        ts->http_server = ipaddr_ntoa(ipaddr);
-        printf("DNS resolved %s to %s\n", name, ipaddr_ntoa(ipaddr));
-    } else {
-        ts->http_server = DEFAULT_HTTP_SERVER;
-        printf("DNS resolution failed for %s\n", name);
-    }
-    ts->dns_ready = true;
 }
 
 void ThingSpeak::connect_task(void *param)
@@ -71,15 +58,6 @@ void ThingSpeak::connect_task(void *param)
         xEventGroupSetBits(ts->eventGroup, EVENT_BIT_1);
         printf("Interface DOWN: setting bit 1. SUSPENDING CLOUD TASK.\n");
         vTaskSuspend(NULL);
-    }
-
-    // DNS Resolution
-    ip_addr_t addr;
-    dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr, ThingSpeak::dns_callback, param);
-
-    // Block until DNS is ready
-    while (!ts->dns_ready) {
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     // Hardware feedback
@@ -111,20 +89,18 @@ void ThingSpeak::send_task(void *param)
     unsigned char *buffer = new unsigned char[RESULT_BUF_SIZE];
 
     while (true) {
-        if (xQueueReceive(ts->cloud_q, &data, /*pdMS_TO_TICKS(5000)*/ portMAX_DELAY)) {
+        if (xQueueReceive(ts->cloud_q, &data, portMAX_DELAY)) {
             xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
             int rc = ipstack->connect(HTTP_SERVER_HOSTNAME, HTTP_PORT);
             if (rc == 0) {
                 gpio_put(LED_2, true);
                 std::ostringstream http_body_ss;
-                http_body_ss << "api_key="
-                    << THINGSPEAK_WRITE_API_KEY
-                    << "&field1=" //field number data.co2.index
-                    << data.co2.value
-                    << "&field2="
-                    << data.rh.value
-                    << "&field3="
-                    << data.temp.value;
+                http_body_ss << "api_key=" << THINGSPEAK_WRITE_API_KEY
+                    << "&field" << data.co2.index << "=" << data.co2.value
+                    << "&field" << data.rh.index << "=" << data.rh.value
+                    << "&field" << data.temp.index << "=" << data.temp.value
+                    << "&field" << data.fan.index << "=" << data.fan.value
+                    << "&field" << data.co2Set.index << "=" << data.co2Set.value;
                 auto http_body = http_body_ss.str();
     
                 snprintf(http_msg, sizeof(http_msg), SEND_DATA_REQ, http_body.size(), http_body.c_str());
