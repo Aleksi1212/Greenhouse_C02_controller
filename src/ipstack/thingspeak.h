@@ -10,51 +10,10 @@
 #include <vector>
 #include <string>
 #include "semphr.h"
-// #include "cert.h"
 
 #define JSMN_STATIC
 #include "event_groups.h"
 #include "jsmn.h"
-// struct CloudData_t {
-//     float co2_level;
-//     float rh;
-//     float temp;
-//     float vent_fan_speed;
-//     float co2_set_point;
-// };
-enum FieldID {
-    CO2_LEVEL = 1,
-    REALATIVE_HUMIDITY,
-    TEMPERATURE,
-    VENT_FAN_SPEED,
-    CO2_SET_POINT,
-    // NUM_OF_FIELDS
-};
-
-enum ERROR_CODES {
-    OK         = 0,
-    MEM        = -1,
-    BUF        = -2,
-    TIMEOUT    = -3,
-    RTE        = -4,
-    INPROGRESS = -5,
-    VAL        = -6,
-    WOULDBLOCK = -7,
-    USE        = -8,
-    ALREADY    = -9,
-    ISCONN     = -10,
-    CONN       = -11,
-    IF         = -12,
-    ABRT       = -13,
-    RST        = -14,
-    CLSD       = -15,
-    ARG        = -16
-};
-
-struct CloudData_t {
-    FieldID field_id;
-    float field_data;
-};
 
 /*
     Some of these addresses is the thingspeak server ???
@@ -123,16 +82,10 @@ private:
 
     EventGroupHandle_t eventGroup;
 
-    std::string http_server;
-    bool dns_ready = false;
-
-    static void dns_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg);
     static void connect_task(void *param);
 
     static void send_task(void *param);
     static void read_task(void *param);
-
-    static void test_task(void *param);
 
     bool parse_talkback_response_json(const char *response, int *co2_set_point);
 public:

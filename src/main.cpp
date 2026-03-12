@@ -74,7 +74,7 @@ int main() {
 
     UITask uiTask(displayQueue, controllerQueue, wiFiQueue, eventGroup, storage);
 
-    ThingSpeak thingSpeak(cloudQueue, cloudQueue, wiFiQueue, eventGroup);
+    ThingSpeak thingSpeak(cloudQueue, controllerQueue, wiFiQueue, eventGroup);
 
     CO2Controller controller(sensors, actuators, guard, controllerQueue, displayQueue, cloudQueue, eventGroup);
 
