@@ -7,7 +7,6 @@
 #include <string.h>
 #include "controller/ControllerEnums.h"
 #include "hardware/gpio.h"
-#include <iostream>
 
 #define LED_1 20
 #define LED_2 21
@@ -52,39 +51,48 @@ void ThingSpeak::dns_callback(const char *name, const ip_addr_t *ipaddr, void *c
 void ThingSpeak::connect_task(void *param)
 {
     ThingSpeak *ts = static_cast<ThingSpeak*>(param);
-
+    
+    // Resolve Conflict: Using dynamic Wi-Fi info from the queue 
+    // while maintaining the TLS certificate from the encryption branch
+    const uint8_t tls_cert[] = THINGSPEAK_CERT;
     wifi_config_t wifiInfo;
-    //printf("waiting for wifi info\n");
+
     if (xQueueReceive(ts->wifi_q, &wifiInfo, portMAX_DELAY) == pdPASS) {
-        // SSID, PW
-        //printf("SSID: %s, PWD: %s\n", wifiInfo.ssid, wifiInfo.pwd);
-        ts->ipstack = std::make_shared<IPStack>(wifiInfo.ssid, wifiInfo.pwd);
+        // Initialize IPStack with dynamic credentials and TLS cert
+        ts->ipstack = std::make_shared<IPStack>(wifiInfo.ssid, wifiInfo.pwd, tls_cert, sizeof(tls_cert));
     }
 
+    // Attempt to bring up the interface
     if ((*ts->ipstack)()) {
         xEventGroupSetBits(ts->eventGroup, EVENT_BIT_0);
-        printf("setting bit 0.\n");
+        printf("Interface UP: setting bit 0.\n");
     }
     else {
         xEventGroupSetBits(ts->eventGroup, EVENT_BIT_1);
-        printf("setting bit 1.\n");
-        printf("SUSPENDING CLOUD TASK.\n");
+        printf("Interface DOWN: setting bit 1. SUSPENDING CLOUD TASK.\n");
         vTaskSuspend(NULL);
     }
 
+    // DNS Resolution
     ip_addr_t addr;
-    int err = (int)dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr,
-        ThingSpeak::dns_callback, param);
+    dns_gethostbyname(HTTP_SERVER_HOSTNAME, &addr, ThingSpeak::dns_callback, param);
 
-    while (!ts->dns_ready) vTaskDelay(pdMS_TO_TICKS(100));
+    // Block until DNS is ready
+    while (!ts->dns_ready) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
+    // Hardware feedback
     gpio_init(LED_1);
     gpio_set_dir(LED_1, GPIO_OUT);
     gpio_put(LED_1, (*ts->ipstack)());
 
+    // Wake up sub-tasks
     xTaskNotifyGive(ts->read_task_handle);
     xTaskNotifyGive(ts->send_task_handle);
-    vTaskSuspend(NULL);
+    
+    // Kill this setup task
+    vTaskDelete(NULL); 
 }
 
 
@@ -105,7 +113,7 @@ void ThingSpeak::send_task(void *param)
     while (true) {
         if (xQueueReceive(ts->cloud_q, &data, /*pdMS_TO_TICKS(5000)*/ portMAX_DELAY)) {
             xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
-            int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+            int rc = ipstack->connect(HTTP_SERVER_HOSTNAME, HTTP_PORT);
             if (rc == 0) {
                 gpio_put(LED_2, true);
                 std::ostringstream http_body_ss;
@@ -211,7 +219,7 @@ void ThingSpeak::read_task(void *param)
 
     while (true) {
         xSemaphoreTake(ts->ipstack_mtx, portMAX_DELAY);
-        int rc = ipstack->connect(ts->http_server.c_str(), HTTP_PORT);
+        int rc = ipstack->connect(HTTP_SERVER_HOSTNAME, HTTP_PORT);
         if (rc == 0) {
             gpio_put(LED_3, true);
             
