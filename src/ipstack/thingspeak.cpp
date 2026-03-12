@@ -205,7 +205,7 @@ void ThingSpeak::read_task(void *param)
                 auto rv = ipstack->read(result_buffer, RESULT_BUF_SIZE, 2000);
                 result_buffer[rv] = 0;
                 int co2_set_point;
-                if (ts->parse_talkback_response_json((const char*)result_buffer, &co2_set_point)) {
+                if (ts->parse_talkback_response_json((const char*)result_buffer, &co2_set_point) && (co2_set_point <= 1500 && co2_set_point >= 0)) {
                     if (xQueueSendToBack(ts->controller_q, &co2_set_point, portMAX_DELAY) == pdTRUE) {
                         std::cout << "NEW CO2_SET_POINT: " << co2_set_point << std::endl;
                     } else {
