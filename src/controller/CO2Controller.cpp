@@ -83,6 +83,12 @@ void CO2Controller::controlFan() {
             fan = 100.0;
         }
     }
+    /*else if (co2 <= co2Level) {           // JUST IN CASE IF MIIA MISUNDERSTOOD THE ASSIGNMENT
+        if (!actuators[FAN]->getStatus()){
+            actuators[FAN]->set(0);
+            fan = 0.0;
+        }
+    }*/
     else {
         if (!actuators[FAN]->getStatus()){
             actuators[FAN]->set(0);
