@@ -22,7 +22,7 @@
 #define SSID_WIFI_TIMEOUT 5000
 #define CONFIRM_TIMEOUT 5000
 #define CO2_SET_LEVEL_TIMEOUT 10000
-#define WIFI_ERROR_TIMEOUT 5000
+#define START_UP_TIMEOUT 30000
 
 // ascii table min max values
 #define ASCII_MIN 33
@@ -98,6 +98,7 @@ void UITask::handleInput() {
         wifiMenuSelection += (delta > 0) ? 1 : -1;
         if (wifiMenuSelection < 0) wifiMenuSelection = 0;
         if (wifiMenuSelection > 1) wifiMenuSelection = 1;
+        lastActive = xTaskGetTickCount();
     }
 
     if (currentScreen == Screen::SETPOINT_SELECT && delta != 0) {
@@ -127,11 +128,7 @@ void UITask::handleInput() {
             currentScreen = (wifiMenuSelection == 0) ? Screen::WIFI_SAVED : Screen::WIFI_NEW_SSID;
 
         } else if (currentScreen == Screen::WIFI_SAVED) {
-            wifiConfig info = storage->getWifiConfig();
-            snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", info.PASSWORD.c_str());
-            snprintf(wifiConfigInfo.ssid, sizeof(wifiConfigInfo.ssid), "%s", info.SSID.c_str());
-            if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
-            // wait eventBit from cloud to see if it connected...
+            getInfoFromMemory();
             currentScreen = Screen::WIFI_CONNECTING;
 
         } else if (currentScreen == Screen::WIFI_NEW_SSID || currentScreen == Screen::WIFI_NEW_PWD){
@@ -158,7 +155,6 @@ void UITask::handleInput() {
 
         } else if (currentScreen == Screen::SETPOINT_SAVED) {
             int level = storage->getCo2Level();
-            printf("co2 level from eeprom: %d\n", level);
             if (xQueueSendToBack(controllerQueue, &level, 0) == pdPASS) printf("SETPOINT SENT TO CONTROLLER");
             currentScreen = Screen::HOME;
         }
@@ -210,11 +206,13 @@ void UITask::checkTimeOut() {
         }
     }
 
-    /*else if (currentScreen == Screen::WIFI_ERROR) {
-        if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(WIFI_ERROR_TIMEOUT)) {
-            currentScreen = Screen::HOME;
+    else if (currentScreen == Screen::WIFI_MENU) {
+        if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(START_UP_TIMEOUT)) {
+            checkDefault = true;
+            checkLastConfigInfo();
+            //currentScreen = Screen::HOME;
         }
-    }*/
+    }
 }
 
 
@@ -333,19 +331,35 @@ void UITask::saveInfoToMemory() {
 
 void UITask::checkEventBits() {
     EventBits_t setBits = xEventGroupGetBits(eventGroup);
-    //printf("event bits: %lu\n", setBits);
     if ((setBits & EVENT_BIT_1) != 0) {
         printf("connection failed.");
         currentScreen = Screen::WIFI_ERROR;
     }
     else if ((setBits & EVENT_BIT_0) != 0) {
         saveInfoToMemory();
-        currentScreen = Screen::SETPOINT_SELECT;
+        if (!checkDefault) currentScreen = Screen::SETPOINT_SELECT;
         lastActive = xTaskGetTickCount();
         wifiInfo.clear();
         std::cout << "SAVED INFO: " << wifiConfigInfo.ssid << " " << wifiConfigInfo.pwd << std::endl;
     }
 }
+
+void UITask::getInfoFromMemory() {
+    wifiConfig info = storage->getWifiConfig();
+    snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", info.PASSWORD.c_str());
+    snprintf(wifiConfigInfo.ssid, sizeof(wifiConfigInfo.ssid), "%s", info.SSID.c_str());
+    if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
+}
+
+
+void UITask::checkLastConfigInfo() {
+    getInfoFromMemory();
+    checkEventBits();
+    int level = storage->getCo2Level();
+    if (xQueueSendToBack(controllerQueue, &level, 0) == pdPASS) printf("SETPOINT SENT TO CONTROLLER");
+    currentScreen = Screen::HOME;
+}
+
 
 
 

@@ -40,6 +40,8 @@ private:
 
     void displayWifiSetInfo();
     void saveInfoToMemory();
+    void getInfoFromMemory();
+    void checkLastConfigInfo();
 
     // display is created inside run() after the scheduler starts
     std::shared_ptr<ssd1306os> display;
@@ -65,6 +67,7 @@ private:
     TickType_t lastActive{0};
     wifi_config_t wifiConfigInfo{.ssid = " ", .pwd = " "};
     bool setWifiPwd{false};
+    bool checkDefault{false};
 
     sensorData latestData{};   // cached data received from displayQueue
 };
