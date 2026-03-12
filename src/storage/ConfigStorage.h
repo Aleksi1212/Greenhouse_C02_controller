@@ -17,7 +17,7 @@ public:
     explicit ConfigStorage(std::shared_ptr<Eeprom> eeprom);
 
     bool setCo2Level(uint16_t level);
-    uint16_t getCo2Level();
+    int getCo2Level();
 
     bool setWifiConfig(wifiConfig info);
     wifiConfig getWifiConfig();

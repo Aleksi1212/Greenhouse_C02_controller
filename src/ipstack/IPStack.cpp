@@ -29,7 +29,6 @@ IPStack::IPStack(const char *ssid, const char *pw) : tcp_pcb{nullptr}, dropped{0
         wifi_connected = true;
         DEBUG_printf("Connected.\n");
     }
-
 }
 
 bool IPStack::operator()() { return wifi_connected; }

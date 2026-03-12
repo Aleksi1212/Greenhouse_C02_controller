@@ -56,6 +56,10 @@ add_executable(${ProjectName}
         input/RotaryEncoder.cpp
         input/RotaryEncoder.h
         network_info.h
+        storage/ConfigStorage.h
+        storage/ConfigStorage.cpp
+        storage/Eeprom.h
+        storage/Eeprom.cpp
 )
 
 target_include_directories(${ProjectName} PRIVATE
@@ -70,6 +74,7 @@ target_include_directories(${ProjectName} PRIVATE
         actuators
         ui
         input
+        storage
 )
 
 target_compile_definitions(${ProjectName} PRIVATE
