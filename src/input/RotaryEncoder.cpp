@@ -1,6 +1,3 @@
-//
-// Created by renek on 07/03/2026.
-//
 
 #include "RotaryEncoder.h"
 #include "hardware/gpio.h"

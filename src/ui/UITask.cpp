@@ -1,6 +1,4 @@
-//
-// Created by renek on 04/03/2026.
-//
+
 
 #include "UITask.h"
 
@@ -60,7 +58,6 @@ void UITask::run() {
 
         handleInput();
         checkTimeOut();
-        //printf("inside ui task\n");
 
         display->fill(0);
         if (currentScreen == Screen::WIFI_MENU) {
@@ -117,7 +114,7 @@ void UITask::handleInput() {
     if ((currentScreen == Screen::WIFI_NEW_SSID || currentScreen == Screen::WIFI_NEW_PWD) && delta != 0) {
         if (delta < 0) currentChar -= 1;
         else currentChar += 1;
-        if (currentChar < ASCII_MIN) currentChar = ASCII_MAX; // ascii table max and min values 33 - 122
+        if (currentChar < ASCII_MIN) currentChar = ASCII_MAX;
         if (currentChar > ASCII_MAX) currentChar = ASCII_MIN;
         lastActive = xTaskGetTickCount();
     }
@@ -155,6 +152,7 @@ void UITask::handleInput() {
 
         } else if (currentScreen == Screen::SETPOINT_SAVED) {
             int level = storage->getCo2Level();
+            if (level == 0xFFFF) level = 1200; // if eeprom read fails then we set the default co2 level.
             if (xQueueSendToBack(controllerQueue, &level, 0) == pdPASS) printf("SETPOINT SENT TO CONTROLLER");
             currentScreen = Screen::HOME;
         }
@@ -169,7 +167,6 @@ void UITask::handleInput() {
 
         } else if (currentScreen == Screen::EDIT_SETPOINT){
             currentSetpoint = editValue; // this is for EDIT_SETPOINT
-            //const auto sp = static_cast<float>(editValue);
             xQueueSend(controllerQueue, &currentSetpoint, 0);
             storage->setCo2Level(currentSetpoint);
             currentScreen = Screen::HOME;
@@ -197,20 +194,10 @@ void UITask::checkTimeOut() {
         }
     }
 
-    else if (currentScreen == Screen::EDIT_SETPOINT) {
-        if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(CO2_SET_LEVEL_TIMEOUT)) { // timeout for CO2_SET_POINT
-            currentSetpoint = 1200;
-            storage->setCo2Level(currentSetpoint);
-            xQueueSend(controllerQueue, &currentSetpoint, 0);
-            currentScreen = Screen::HOME;
-        }
-    }
-
-    else if (currentScreen == Screen::WIFI_MENU) {
+    else if (currentScreen == Screen::WIFI_MENU) { // timeout for start menu - if power loss, able to recover itself
         if ((xTaskGetTickCount() - lastActive) > pdMS_TO_TICKS(START_UP_TIMEOUT)) {
             checkDefault = true;
             checkLastConfigInfo();
-            //currentScreen = Screen::HOME;
         }
     }
 }
@@ -254,9 +241,7 @@ void UITask::drawWifiMenuScreen() {
 }
 
 void UITask::drawWifiSavedScreen() {
-    // PLACEHOLDER!!! for getting wifi info from eeprom
     display->text("CHECKING EEPROM", 0, 20);
-    //display->text("config info...", 0, 32);
     display->text("Press to cont.", 0, 50);
 }
 
@@ -296,9 +281,7 @@ void UITask::drawWifiConnecting() {
 }
 
 void UITask::drawSetpointSavedScreen() {
-    // PLACEHOLDER!!! for getting wifi info from eeprom
     display->text("CHECKING EEPROM", 0, 20);
-    //display->text("config info...", 0, 32);
     display->text("Press to cont.", 0, 50);
 }
 
@@ -349,6 +332,7 @@ void UITask::getInfoFromMemory() {
     snprintf(wifiConfigInfo.pwd, sizeof(wifiConfigInfo.pwd), "%s", info.PASSWORD.c_str());
     snprintf(wifiConfigInfo.ssid, sizeof(wifiConfigInfo.ssid), "%s", info.SSID.c_str());
     if (xQueueSendToBack(wifiQueue, &wifiConfigInfo, 0) == pdPASS) printf("WIFI INFO SENT TO CLOUD");
+
 }
 
 
@@ -356,6 +340,7 @@ void UITask::checkLastConfigInfo() {
     getInfoFromMemory();
     checkEventBits();
     int level = storage->getCo2Level();
+    if (level == 0xFFFF) level = 1200; // if eeprom read fails then we set the default co2 level.
     if (xQueueSendToBack(controllerQueue, &level, 0) == pdPASS) printf("SETPOINT SENT TO CONTROLLER");
     currentScreen = Screen::HOME;
 }

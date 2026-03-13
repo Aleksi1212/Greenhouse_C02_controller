@@ -1,6 +1,3 @@
-//
-// Created by Mmiud on 2/11/2026.
-//
 
 #include "CO2Sensor.h"
 
@@ -18,8 +15,6 @@ float CO2Sensor::readValue() {
 }
 
 uint16_t CO2Sensor::checkStatus() {
-    /*uint16_t value = status.read();
-    printf("co2 check value: %d\n", value);*/
     return status.read();
 }
 

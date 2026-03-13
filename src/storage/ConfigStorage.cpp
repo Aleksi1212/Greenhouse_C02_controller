@@ -6,7 +6,7 @@
 #include <vector>
 
 // use setCO2Level for storing co2level on eeprom and get for getting the previous value
-// wifi config info is saved and retrieved using wifiConfig struct -> we need to typecast these c strings before passsing into a queue
+// wifi config info is saved and retrieved using wifiConfig struct -> we need to typecast these c strings before passing into a queue
 // each value read is validated with checksum calculation
 
 // if reading co2level fails error value sent is 0XFFFF
@@ -37,7 +37,6 @@ int ConfigStorage::getCo2Level() {
     eeprom->readBytes(CO2_ADDR, buffer);
 
     if (crc(buffer) != 0) {
-        //printf("CO2 read validation failed.\n");
         return 0xFFFF; // error value if crc validations fails
     }
     return static_cast<uint16_t>(buffer[0] << 8) | static_cast<uint16_t>(buffer[1]);
@@ -48,7 +47,7 @@ bool ConfigStorage::setWifiConfig(wifiConfig info) {
     std::vector<uint8_t> passwordBuffer;
 
     ssidBuffer.insert(ssidBuffer.begin(), info.SSID.begin(), info.SSID.end());
-    ssidBuffer.push_back('\0'); // add null
+    ssidBuffer.push_back('\0');
 
     uint16_t checkSumSsid = crc(ssidBuffer);
     ssidBuffer.push_back((checkSumSsid >> 8) & 0xFF);
@@ -94,7 +93,6 @@ wifiConfig ConfigStorage::getWifiConfig() {
 
         if (crc(buffer) == 0) {
             wifiInfo.PASSWORD = std::string(buffer.begin(), buffer.end() - 2); // remove crc bytes
-            //printf("PASSWORD validated.\n");
         }
     }
 

@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 2/20/2026.
-//
+
 
 #include "Eeprom.h"
 #include <vector>
@@ -61,7 +59,6 @@ bool Eeprom::emptyEeprom() {
     std::vector<uint8_t> buffer(64,0);
 
     while (address < MAX_BYTES) {
-        //printf("emptying eeprom\n");
         writeBytes(address, buffer);
         address += ENTRY_SIZE;
     }

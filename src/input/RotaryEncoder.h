@@ -1,6 +1,3 @@
-//
-// Created by renek on 07/03/2026.
-//
 
 #ifndef ROTARYENCODER_H
 #define ROTARYENCODER_H

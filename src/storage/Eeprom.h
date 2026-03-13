@@ -1,6 +1,3 @@
-//
-// Created by Mmiud on 2/20/2026.
-//
 
 #ifndef EEPROM_H
 #define EEPROM_H

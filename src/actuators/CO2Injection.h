@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 2/12/2026.
-//
+
 
 #ifndef CO2INJECTION_H
 #define CO2INJECTION_H

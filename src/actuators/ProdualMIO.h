@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 2/12/2026.
-//
+
 
 #ifndef PRODUALMIO_H
 #define PRODUALMIO_H

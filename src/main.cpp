@@ -61,16 +61,15 @@ int main() {
         std::make_shared<CO2Injection>(27)
     };
 
-    QueueHandle_t controllerQueue = xQueueCreate(3, sizeof(int)); // this could be used to send commands to controller task
+    QueueHandle_t controllerQueue = xQueueCreate(3, sizeof(int)); // for UITask & cloudTask -> controllerTask
     QueueHandle_t displayQueue = xQueueCreate(3, sizeof(sensorData)); // for controller -> userInterfaceTask
     QueueHandle_t cloudQueue = xQueueCreate(3, sizeof(sensorData)); // for controller -> cloudTask
     QueueHandle_t wiFiQueue = xQueueCreate(3, sizeof(wifi_config_t)); // for UITask -> cloudTask
 
-    // create eventGroup -> cloud set bit -> controller wait bit
     EventGroupHandle_t eventGroup = xEventGroupCreate();
 
-    auto eeprom = std::make_shared<Eeprom>(0, 0x50); // create eeprom instance
-    auto storage = std::make_shared<ConfigStorage>(eeprom);  // configuration storage
+    auto eeprom = std::make_shared<Eeprom>(0, 0x50);
+    auto storage = std::make_shared<ConfigStorage>(eeprom);
 
     UITask uiTask(displayQueue, controllerQueue, wiFiQueue, eventGroup, storage);
 
