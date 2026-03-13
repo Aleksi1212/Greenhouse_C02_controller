@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 2/11/2026.
-//
+
 
 #ifndef SENSORINTERFACE_H
 #define SENSORINTERFACE_H
@@ -11,6 +9,8 @@
 
 class SensorInterface {
 public:
+    virtual ~SensorInterface() = default;
+
     virtual float readValue() = 0;
 };
 

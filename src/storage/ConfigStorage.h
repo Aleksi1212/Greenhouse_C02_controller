@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 3/4/2026.
-//
+
 
 #ifndef CONFIGSTORAGE_H
 #define CONFIGSTORAGE_H

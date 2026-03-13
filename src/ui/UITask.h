@@ -1,6 +1,3 @@
-//
-// Created by renek on 04/03/2026.
-//
 
 #ifndef UITASK_H
 #define UITASK_H
@@ -43,7 +40,6 @@ private:
     void getInfoFromMemory();
     void checkLastConfigInfo();
 
-    // display is created inside run() after the scheduler starts
     std::shared_ptr<ssd1306os> display;
     std::shared_ptr<ConfigStorage> storage;
     QueueHandle_t displayQueue;
@@ -69,7 +65,7 @@ private:
     bool setWifiPwd{false};
     bool checkDefault{false};
 
-    sensorData latestData{};   // cached data received from displayQueue
+    sensorData latestData{};
 };
 
 #endif // UITASK_H

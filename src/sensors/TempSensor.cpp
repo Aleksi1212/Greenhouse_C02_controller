@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 2/11/2026.
-//
+
 
 #include "TempSensor.h"
 

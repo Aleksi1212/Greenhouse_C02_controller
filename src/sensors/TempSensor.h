@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 2/11/2026.
-//
+
 
 #ifndef TEMPSENSOR_H
 #define TEMPSENSOR_H
@@ -14,7 +12,6 @@ public:
     TempSensor(std::shared_ptr<ModbusClient> client, int devAddr, int regAddr, int statusRegAddr);
     float readValue() override;
 private:
-    //std::shared_ptr<ModbusClient> client;
     ModbusRegister temp;
     ModbusRegister status;
 

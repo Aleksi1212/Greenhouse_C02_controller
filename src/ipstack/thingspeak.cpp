@@ -220,6 +220,6 @@ void ThingSpeak::read_task(void *param)
         gpio_put(LED_3, false);
 
         xSemaphoreGive(ts->ipstack_mtx);
-        vTaskDelay(pdMS_TO_TICKS(20000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }

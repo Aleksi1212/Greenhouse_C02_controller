@@ -1,6 +1,3 @@
-//
-// Created by Mmiud on 2/11/2026.
-//
 
 #ifndef CO2SENSOR_H
 #define CO2SENSOR_H
@@ -13,7 +10,6 @@ public:
     CO2Sensor(std::shared_ptr<ModbusClient> client, int devAddr, int regAddr, int statusRegAddr);
     float readValue() override;
 private:
-    //std::shared_ptr<ModbusClient> client;
     ModbusRegister co2;
     ModbusRegister status;
 

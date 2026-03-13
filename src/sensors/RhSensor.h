@@ -1,6 +1,4 @@
-//
-// Created by Mmiud on 2/11/2026.
-//
+
 
 #ifndef RHSENSOR_H
 #define RHSENSOR_H
@@ -17,7 +15,6 @@ public:
     float readValue() override;
 
 private:
-    //std::shared_ptr<ModbusClient> client;
     ModbusRegister rh;
     ModbusRegister status;
 
