@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    image: aleksi1212/greenhouse_web
+    container_name: greenhouse_web
+    ports:
+      - 3000:3000
+    env_file:
+      - ./.env
+    command: ["node", "."]

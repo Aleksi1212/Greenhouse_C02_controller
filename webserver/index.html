@@ -19,6 +19,13 @@
         <div id="result"></div>
     </div>
 
+    <div class="data_cont">
+        <h2>Greenhouse CO2 Data</h2>
+        <div class="chart" id="chart">
+        </div>
+        <p id="data_time">Measured at: </p>
+    </div>
+
     <script>
         function useText() {
             const text = document.getElementById("Input").value;
@@ -58,6 +65,51 @@
                 resultDiv.className = "error";
             });
         }
+        async function getData() {
+            const fieldCount = 5
+            let maxFieldValue = 0
+
+            const chart = document.getElementById("chart")
+
+            const res = await fetch("/data")
+            const data = await res.json()
+
+            if (data["error"]) return
+
+            document.getElementById("data_time").innerHTML = `Measured at: ${data["feeds"][0]["created_at"]}`
+
+            for (let i = 1; i <= fieldCount; i++) {
+                const fieldValue = data["feeds"][0][`field${i}`]
+                if (fieldValue >= maxFieldValue) {
+                    maxFieldValue = fieldValue
+                }
+            }
+
+            for (let i = 1; i <= fieldCount; i++) {
+                const fieldName = data["channel"][`field${i}`]
+                const fieldValue = data["feeds"][0][`field${i}`]
+
+                const val = document.createElement("div")
+                val.className = "value"
+                val.innerHTML = Math.round(fieldValue * 10) / 10
+
+                const bar = document.createElement("div")
+                bar.className = "bar"
+                bar.style.height = `${(fieldValue / maxFieldValue) * 200}px`
+
+                const label = document.createElement("div")
+                label.className = "label"
+                label.innerHTML = fieldName
+
+                const bg = document.createElement("div")
+                bg.appendChild(val)
+                bg.appendChild(bar)
+                bg.appendChild(label)
+
+                chart.appendChild(bg)
+            }
+        }
+        getData()
     </script>
 </body>
 </html>

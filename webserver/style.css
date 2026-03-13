@@ -18,6 +18,55 @@ body {
     margin: 0 auto; 
 }
 
+.data_cont {
+    background: white; 
+    padding: 80px; 
+    display: inline-block; 
+    border-radius: 25px; 
+    box-shadow: 0 15px 40px rgba(0,0,0,0.1); 
+    border-top: 8px solid #28a745; 
+    width: 90%; 
+    max-width: 800px; 
+    margin-top: 50px; 
+}
+.chart {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-around;
+    height: 300px;
+    margin-top: 40px;
+}
+
+.bar-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+}
+
+.bar {
+    width: 60px;
+    background: linear-gradient(180deg,#34d058,#28a745);
+    border-radius: 10px 10px 0 0;
+    transition: transform 0.2s;
+}
+
+.bar:hover {
+    transform: scaleY(1.05);
+}
+
+.label {
+    margin-top: 10px;
+    font-size: 18px;
+    color: #2c3e50;
+}
+
+.value {
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #28a745;
+}
+
 h2 { 
     color: #2c3e50; 
     font-size: 65px; 
